@@ -1,0 +1,77 @@
+{
+  "name": "game-ranker",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Rank and review your games - offline, local-first.",
+  "author": "Game Ranker",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:127.0.0.1:5173 && cross-env NODE_ENV=development electron .",
+    "build": "vite build",
+    "icon": "node scripts/make-icon.js",
+    "dist": "npm run icon && npm run build && electron-builder --win nsis",
+    "release": "npm run icon && npm run build && electron-builder --win nsis --publish always"
+  },
+  "build": {
+    "appId": "com.gameranker.app",
+    "productName": "Game Ranker",
+    "copyright": "Copyright (c) 2026",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Spagettifrig",
+      "repo": "Media-Ranker"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Game-Ranker-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Game Ranker",
+      "menuCategory": false,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    }
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@supabase/supabase-js": "^2.45.0",
+    "electron-updater": "^6.3.9",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.5",
+    "concurrently": "^10.0.4",
+    "cross-env": "^10.1.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.2.1",
+    "wait-on": "^9.1.0"
+  }
+}

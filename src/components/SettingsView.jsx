@@ -1,0 +1,392 @@
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { COVER_ASPECT_OPTIONS } from '../lib/settings.js';
+
+/**
+ * The credentials the online catalog needs, in the order it makes sense to
+ * collect them. `hint` is the whole setup instruction - there is nowhere else
+ * in the app that explains where these come from.
+ */
+const CREDENTIAL_FIELDS = [
+  {
+    key: 'tmdbToken',
+    label: 'TMDB read access token',
+    for: 'Movies',
+    hint: 'themoviedb.org → Settings → API. Copy the API Read Access Token, not the v3 key.',
+    secret: true,
+  },
+  {
+    key: 'twitchClientId',
+    label: 'Twitch client ID',
+    for: 'Games',
+    hint: 'dev.twitch.tv/console → Register Your Application. Needs 2FA on the Twitch account.',
+    secret: false,
+  },
+  {
+    key: 'twitchClientSecret',
+    label: 'Twitch client secret',
+    for: 'Games',
+    hint: 'Generated on the same page as the client ID. Regenerate it any time.',
+    secret: true,
+  },
+];
+
+const SHORTCUT_SECTIONS = [
+  {
+    title: 'Anywhere',
+    rows: [
+      [['?'], 'Show or hide settings'],
+      [['Ctrl', 'F'], 'Jump to the search box'],
+      [['/'], 'Jump to the search box'],
+      [['Alt', '1'], 'Switch to Games'],
+      [['Alt', '2'], 'Switch to Movies'],
+      [['Ctrl', 'E'], 'Export the ranking as a PNG'],
+      [['Esc'], 'Close, clear, or step back'],
+    ],
+  },
+  {
+    title: 'On the board',
+    rows: [
+      [['←', '→'], 'Move along the row'],
+      [['↑', '↓'], 'Move up and down a row'],
+      [['Home', 'End'], 'First or last card'],
+      [['Enter'], 'Open the selected card'],
+      [['Delete'], 'Delete the selected card'],
+    ],
+  },
+  {
+    title: 'On a detail page',
+    rows: [
+      [['↑', '↓'], 'Pick a category to score'],
+      [['0', '-', '9'], 'Type a score for that category'],
+      [['←', '→'], 'Flip through the images'],
+      [['Enter'], 'Commit the typed score'],
+      [['Esc'], 'Back to the board'],
+    ],
+  },
+];
+
+/**
+ * Settings sheet: appearance (theme, cover aspect ratio) and the keyboard
+ * reference. Opened with `?`, from the sidebar, or the first time someone
+ * goes looking for either.
+ */
+export default function SettingsView({
+  theme,
+  onThemeChange,
+  coverAspect,
+  onCoverAspectChange,
+  credentials,
+  onCredentialChange,
+  user,
+  onSignUp,
+  onSignIn,
+  onSignOut,
+  onClose,
+}) {
+  const ref = useRef(null);
+  const [reveal, setReveal] = useState(false);
+
+  useEffect(() => {
+    ref.current?.focus({ preventScroll: true });
+    function onKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="overlay" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Settings" tabIndex={-1} ref={ref}>
+        <header className="sheet__head">
+          <h2>Settings</h2>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>
+            Close
+          </button>
+        </header>
+
+        <div className="settings__body">
+          <section className="settings__section">
+            <h3 className="keys__title">Appearance</h3>
+            <div className="settings__row">
+              <div>
+                <p className="settings__row-title">Theme</p>
+                <p className="settings__row-desc">Switch the whole app between dark and light.</p>
+              </div>
+              <div className="segmented" role="radiogroup" aria-label="Theme">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === 'dark'}
+                  className={`segmented__item${theme === 'dark' ? ' is-on' : ''}`}
+                  onClick={() => onThemeChange('dark')}
+                >
+                  <MoonIcon />
+                  Dark
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === 'light'}
+                  className={`segmented__item${theme === 'light' ? ' is-on' : ''}`}
+                  onClick={() => onThemeChange('light')}
+                >
+                  <SunIcon />
+                  Light
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings__section">
+            <h3 className="keys__title">Cover aspect ratio</h3>
+            <p className="settings__row-desc">
+              The shape covers are cropped to on the board and in compare. Pick whatever matches your art.
+            </p>
+            <div className="aspect-grid" role="radiogroup" aria-label="Cover aspect ratio">
+              {COVER_ASPECT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={coverAspect === option.value}
+                  className={`aspect-swatch${coverAspect === option.value ? ' is-on' : ''}`}
+                  onClick={() => onCoverAspectChange(option.value)}
+                >
+                  <span className="aspect-swatch__box" aria-hidden="true">
+                    <span className="aspect-swatch__box-inner" style={{ aspectRatio: option.value }} />
+                  </span>
+                  <span className="aspect-swatch__label">{option.label}</span>
+                  <span className="aspect-swatch__ratio">{option.value.replace(/\s/g, '')}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="settings__section">
+            <div className="settings__row">
+              <div>
+                <h3 className="keys__title">Online catalog</h3>
+                <p className="settings__row-desc">
+                  Lets you search for a title and add it with its cover already attached. Stored
+                  only on this machine, in your local data file. Leave blank to keep importing
+                  images by hand.
+                </p>
+              </div>
+              <button
+                type="button"
+                className={`btn btn--ghost btn--sm${reveal ? ' is-on' : ''}`}
+                onClick={() => setReveal((value) => !value)}
+              >
+                {reveal ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            <div className="settings__creds">
+              {CREDENTIAL_FIELDS.map((field) => (
+                <label key={field.key} className="field">
+                  <span className="field__label">
+                    {field.label}
+                    <span className="field__for">{field.for}</span>
+                  </span>
+                  <span className="field__control">
+                    <input
+                      type={field.secret && !reveal ? 'password' : 'text'}
+                      className="field__input field__input--cred"
+                      value={credentials?.[field.key] ?? ''}
+                      onChange={(event) => onCredentialChange(field.key, event.target.value)}
+                      placeholder="Not set"
+                      spellCheck="false"
+                      autoComplete="off"
+                    />
+                  </span>
+                  <span className="field__hint">{field.hint}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <AccountSection user={user} onSignUp={onSignUp} onSignIn={onSignIn} onSignOut={onSignOut} />
+
+          <section className="settings__section">
+            <h3 className="keys__title">Keyboard shortcuts</h3>
+            <div className="settings__keys">
+              {SHORTCUT_SECTIONS.map((section) => (
+                <div key={section.title} className="keys">
+                  <h4 className="keys__title">{section.title}</h4>
+                  <dl className="keys__list">
+                    {/* Two shortcuts can share a description (Ctrl+F and / both
+                        jump to search), so the key has to include the combo. */}
+                    {section.rows.map(([combo, description]) => (
+                      <div key={`${section.title}-${combo.join('+')}`} className="keys__row">
+                        <dt>
+                          {combo.map((key, index) => {
+                            // '-' is a range marker ("0 - 9"), not a key, and it
+                            // replaces the "+" that would otherwise join the pair.
+                            if (key === '-') {
+                              return (
+                                <span key={`${key}-${index}`} className="keys__join">
+                                  –
+                                </span>
+                              );
+                            }
+                            const joined = index > 0 && combo[index - 1] !== '-';
+                            return (
+                              <span key={`${key}-${index}`}>
+                                {joined ? <span className="keys__join">+</span> : null}
+                                <kbd>{key}</kbd>
+                              </span>
+                            );
+                          })}
+                        </dt>
+                        <dd>{description}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
+            </div>
+            <p className="sheet__foot">
+              Typing a score works digit by digit — press <kbd>8</kbd> then <kbd>5</kbd> for 85, or
+              <kbd>1</kbd> <kbd>0</kbd> <kbd>0</kbd> for 100. It commits on its own after a moment.
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * Signing in is entirely optional - staying signed out is the same fully
+ * offline app as before. Email+password only for now, so there is no
+ * browser hop to bounce back into the desktop window from.
+ */
+function AccountSection({ user, onSignUp, onSignIn, onSignOut }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function submit(action) {
+    if (pending) return;
+    setPending(true);
+    setError(null);
+    const run = action === 'signUp' ? onSignUp : onSignIn;
+    const failure = await run(email, password);
+    setPending(false);
+    if (failure) setError(failure);
+  }
+
+  if (user) {
+    return (
+      <section className="settings__section">
+        <h3 className="keys__title">Account</h3>
+        <div className="settings__row">
+          <div>
+            <p className="settings__row-title">Signed in as {user.email}</p>
+            <p className="settings__row-desc">
+              Your rankings sync to your account. Signing out returns to fully local
+              mode — nothing already on this device is deleted.
+            </p>
+          </div>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="settings__section">
+      <h3 className="keys__title">Account</h3>
+      <p className="settings__row-desc">
+        Sign in to sync your rankings across devices. Staying signed out keeps the app
+        exactly as it works today — fully offline, nothing sent anywhere.
+      </p>
+
+      <div className="settings__creds">
+        <label className="field">
+          <span className="field__label">Email</span>
+          <span className="field__control">
+            <input
+              type="email"
+              className="field__input"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              spellCheck="false"
+            />
+          </span>
+        </label>
+        <label className="field">
+          <span className="field__label">Password</span>
+          <span className="field__control">
+            <input
+              type="password"
+              className="field__input"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+          </span>
+        </label>
+      </div>
+
+      {error ? <p className="field__hint field__hint--error">{error}</p> : null}
+
+      <div className="settings__account-actions">
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          disabled={pending || !email || !password}
+          onClick={() => submit('signIn')}
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          className="btn btn--primary btn--sm"
+          disabled={pending || !email || !password}
+          onClick={() => submit('signUp')}
+        >
+          Sign up
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 14.2A8.4 8.4 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
