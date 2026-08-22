@@ -31,6 +31,28 @@ const CREDENTIAL_FIELDS = [
   },
 ];
 
+/** Full walkthroughs for the two credential hints above - one-liners point at where to look, these spell out every click. */
+const CATALOG_SETUP_GUIDES = [
+  {
+    title: 'Getting a TMDB token (Movies)',
+    steps: [
+      'Create a free account at themoviedb.org.',
+      'Go to Settings → API, and request an API key - pick "Developer" when it asks how you\'ll use it.',
+      'Once it\'s approved, copy the "API Read Access Token" (the long token) - not the shorter "API Key (v3 auth)".',
+      'Paste it into the TMDB field above.',
+    ],
+  },
+  {
+    title: 'Getting IGDB credentials (Games)',
+    steps: [
+      'Go to dev.twitch.tv/console. You\'ll need a Twitch account with two-factor authentication turned on.',
+      'Click "Register Your Application". Any name works; set the OAuth Redirect URL to http://localhost and the category to "Application Integration".',
+      'Copy the Client ID it generates into the field above.',
+      'On the same page, click "New Secret" to generate a Client Secret, and copy that into the field above too.',
+    ],
+  },
+];
+
 const SHORTCUT_SECTIONS = [
   {
     title: 'Anywhere',
@@ -207,6 +229,19 @@ export default function SettingsView({
                   </span>
                   <span className="field__hint">{field.hint}</span>
                 </label>
+              ))}
+            </div>
+
+            <div className="settings__guides">
+              {CATALOG_SETUP_GUIDES.map((guide) => (
+                <div key={guide.title} className="settings__guide">
+                  <h4 className="keys__title">{guide.title}</h4>
+                  <ol className="settings__steps">
+                    {guide.steps.map((step, index) => (
+                      <li key={index}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
               ))}
             </div>
           </section>

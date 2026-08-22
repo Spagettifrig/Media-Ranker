@@ -1,6 +1,6 @@
 {
   "name": "game-ranker",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Rank and review your games - offline, local-first.",
   "author": "Game Ranker",

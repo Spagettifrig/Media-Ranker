@@ -2805,6 +2805,28 @@ kbd {
   margin-top: 16px;
 }
 
+.settings__guides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 20px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line-soft);
+}
+
+.settings__steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.settings__steps li {
+  padding-left: 2px;
+}
+
 .field__for {
   margin-left: 8px;
   padding: 2px 7px;
