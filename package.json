@@ -22,12 +22,14 @@
       "output": "release",
       "buildResources": "build"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "Spagettifrig",
-      "repo": "Media-Ranker",
-      "draft": false
-    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Spagettifrig",
+        "repo": "Media-Ranker",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",
