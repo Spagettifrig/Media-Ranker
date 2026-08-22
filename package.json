@@ -26,8 +26,7 @@
       {
         "provider": "github",
         "owner": "Spagettifrig",
-        "repo": "Media-Ranker",
-        "releaseType": "release"
+        "repo": "Media-Ranker"
       }
     ],
     "files": [
