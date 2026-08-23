@@ -3,11 +3,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  /** Read the persisted library. Resolves to { version, games }. */
-  load: () => ipcRenderer.invoke('data:load'),
+  /**
+   * Read the persisted library for one account (null = signed out, the
+   * device's own library). Resolves to { version, libraries, settings }.
+   */
+  load: (accountId = null) => ipcRenderer.invoke('data:load', accountId),
 
-  /** Persist the whole library. Called on every change (autosave). */
-  save: (state) => ipcRenderer.invoke('data:save', state),
+  /** Persist the whole library for one account. Called on every change (autosave). */
+  save: (accountId, state) => ipcRenderer.invoke('data:save', accountId, state),
 
   /**
    * The window is closing and wants one last save before it goes. Run the
@@ -85,6 +88,29 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('auth:changed', handler);
     return () => ipcRenderer.removeListener('auth:changed', handler);
   },
+
+  /** Resolves to { ok, profile } or { ok: false, error }. */
+  getProfile: () => ipcRenderer.invoke('sync:getProfile'),
+
+  /** Sets the profile-wide default visibility for new/inherited reviews. */
+  updateProfile: (defaultVisibility) =>
+    ipcRenderer.invoke('sync:updateProfile', { defaultVisibility }),
+
+  /** Upserts one item to the cloud as a review. No-ops server-side if it has no catalog identity. */
+  pushReview: (libraryKey, item) => ipcRenderer.invoke('sync:pushReview', libraryKey, item),
+
+  /** Soft-deletes a pushed review so it drops out of everyone's feed. */
+  deleteReview: (id) => ipcRenderer.invoke('sync:deleteReview', id),
+
+  /** Your own reviews from the cloud, covers already downloaded. For rebuilding a library on a new machine. */
+  pullLibrary: () => ipcRenderer.invoke('sync:pullLibrary'),
+
+  /** Other users' reviews of one catalog item. Resolves to { ok, reviews } or { ok: false, error }. */
+  fetchPublicReviews: (provider, providerId) =>
+    ipcRenderer.invoke('sync:fetchPublicReviews', provider, providerId),
+
+  /** One user's visible-to-you reviews. Resolves to { ok, displayName, reviews } or { ok: false, error }. */
+  fetchProfileReviews: (userId) => ipcRenderer.invoke('sync:fetchProfileReviews', userId),
 
   /** Fires once a background-downloaded update is ready to install. */
   onUpdateStatus: (callback) => {

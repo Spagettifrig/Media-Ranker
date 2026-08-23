@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import CommunityReviews from './CommunityReviews.jsx';
 import ScoreSlider from './ScoreSlider.jsx';
 import SaveIndicator from './SaveIndicator.jsx';
 import TagChips from './TagChips.jsx';
 import { ordinal } from '../lib/score.js';
 import { allImagesOf } from '../lib/model.js';
 import { formatDate, formatHours } from '../lib/stats.js';
+
+const VISIBILITY_OPTIONS = [
+  { value: 'inherit', label: 'Inherit' },
+  { value: 'public', label: 'Public' },
+  { value: 'private', label: 'Private' },
+];
 
 const SWIPE_THRESHOLD_PX = 60;
 /** How long a typed score sits half-finished before it commits itself. */
@@ -29,6 +36,9 @@ export default function DetailView({
   onToggleGenre,
   onToggleMode,
   onToggleCategoryApplicable,
+  user,
+  onVisibilityChange,
+  onOpenProfile,
 }) {
   const images = allImagesOf(item);
   const [index, setIndex] = useState(0);
@@ -446,6 +456,36 @@ export default function DetailView({
             </label>
           ))}
         </section>
+
+        {user && item.provider && item.providerId ? (
+          <section className="sharing" aria-label="Sharing">
+            <div className="settings__row">
+              <div>
+                <p className="settings__row-title">Sharing</p>
+                <p className="settings__row-desc">
+                  Inherit follows your account's default (Settings → Account). Public or
+                  Private always override it for just this one review.
+                </p>
+              </div>
+              <div className="segmented" role="radiogroup" aria-label="Visibility">
+                {VISIBILITY_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={(item.visibility ?? 'inherit') === option.value}
+                    className={`segmented__item${(item.visibility ?? 'inherit') === option.value ? ' is-on' : ''}`}
+                    onClick={() => onVisibilityChange(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <CommunityReviews item={item} user={user} onOpenProfile={onOpenProfile} />
       </div>
     </div>
   );

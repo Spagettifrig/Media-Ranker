@@ -169,6 +169,7 @@ function fromTmdb(movie) {
  * ------------------------------------------------------------------ */
 const PROVIDERS = {
   games: {
+    id: 'igdb',
     label: 'IGDB',
     // Field names as they are stored in settings, in the order Settings shows them.
     requires: ['twitchClientId', 'twitchClientSecret'],
@@ -188,6 +189,7 @@ const PROVIDERS = {
   },
 
   movies: {
+    id: 'tmdb',
     label: 'TMDB',
     requires: ['tmdbToken'],
     async search(credentials, query) {
@@ -244,7 +246,10 @@ async function detail(libraryKey, remoteId, credentials) {
   if (!provider) throw new Error('This library has no online catalog.');
   const gaps = missing(libraryKey, credentials);
   if (gaps.length > 0) throw new Error(`Add your ${provider.label} credentials in Settings first.`);
-  return provider.detail(credentials, remoteId);
+  const entry = await provider.detail(credentials, remoteId);
+  // Tags the entry with which provider resolved it, so it can be pushed to
+  // the social feed under a stable, cross-user identity (see model.js).
+  return entry ? { ...entry, provider: provider.id } : entry;
 }
 
 module.exports = { search, detail, status };

@@ -53,6 +53,27 @@ function normalizeAddedAt(value) {
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 
+/** Same shape as `normalizeAddedAt`, just a different meaning: last edit, not first add. */
+function normalizeUpdatedAt(value) {
+  if (typeof value !== 'string' || !value) return new Date().toISOString();
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : new Date().toISOString();
+}
+
+const PROVIDERS = new Set(['igdb', 'tmdb']);
+
+/** Which catalog resolved this item, if any - `null` for a manual (photo) import. */
+function normalizeProvider(value) {
+  return PROVIDERS.has(value) ? value : null;
+}
+
+const VISIBILITIES = new Set(['inherit', 'public', 'private']);
+
+/** Per-review visibility override; `'inherit'` defers to the profile's default. */
+function normalizeVisibility(value) {
+  return VISIBILITIES.has(value) ? value : 'inherit';
+}
+
 /**
  * `genres`, `modes` and `hoursPlayed` are optional because a manual import has
  * none of them - they are filled in when an item comes from the online
@@ -60,12 +81,23 @@ function normalizeAddedAt(value) {
  */
 export function createItem(
   libraryKey,
-  { title, mainImage = null, galleryImages = [], genres = [], modes = [], hoursPlayed = null } = {},
+  {
+    title,
+    mainImage = null,
+    galleryImages = [],
+    genres = [],
+    modes = [],
+    hoursPlayed = null,
+    provider = null,
+    providerId = null,
+    coverImageUrl = null,
+  } = {},
 ) {
   const config = libraryConfig(libraryKey);
   const categoryScores = Object.fromEntries(
     config.categories.map((c) => [c.key, DEFAULT_CATEGORY_SCORE]),
   );
+  const now = new Date().toISOString();
   return {
     id: newId(),
     title: title || `Untitled ${config.Item}`,
@@ -80,7 +112,16 @@ export function createItem(
     firstPlayed: '',
     genres: normalizeTags(genres, config.genres),
     modes: normalizeTags(modes, config.modes),
-    addedAt: new Date().toISOString(),
+    addedAt: now,
+    // Set only when the item came from a catalog search - see catalog.js /
+    // App.jsx's addFromCatalog. A manual (photo) import leaves these null,
+    // which is what keeps it out of the social feed: there's no reliable
+    // shared identity to join it to another user's copy of the same game.
+    provider: normalizeProvider(provider),
+    providerId: provider && providerId != null ? String(providerId) : null,
+    coverImageUrl: typeof coverImageUrl === 'string' ? coverImageUrl : null,
+    visibility: 'inherit',
+    updatedAt: now,
   };
 }
 
@@ -127,7 +168,45 @@ export function normalizeItem(libraryKey, raw, index) {
     // Items saved before "date added" existed keep a null stamp; sorting falls
     // back to board order for those, which is the closest honest answer.
     addedAt: normalizeAddedAt(raw?.addedAt),
+    provider: normalizeProvider(raw?.provider),
+    providerId:
+      normalizeProvider(raw?.provider) && typeof raw?.providerId === 'string' ? raw.providerId : null,
+    coverImageUrl: typeof raw?.coverImageUrl === 'string' ? raw.coverImageUrl : null,
+    visibility: normalizeVisibility(raw?.visibility),
+    // Items saved before edit-stamping existed fall back to when they were
+    // added, so they get one stable timestamp instead of looking freshly
+    // edited - and therefore newer than the cloud - on every single load.
+    updatedAt: normalizeUpdatedAt(raw?.updatedAt ?? raw?.addedAt),
   };
+}
+
+/**
+ * A cloud review row (already cover-downloaded by the main process) as a local
+ * item. Only the fields the cloud actually stores come back: board position,
+ * gallery images and the "first played" date are per-device and start empty.
+ */
+export function itemFromReview(libraryKey, review, index = 0) {
+  return normalizeItem(
+    libraryKey,
+    {
+      id: review.id,
+      title: review.title,
+      mainImage: review.file ?? null,
+      galleryImages: [],
+      categoryScores: review.categoryScores,
+      descriptions: review.descriptions,
+      genres: review.genres,
+      modes: review.modes,
+      hoursPlayed: review.hoursPlayed,
+      addedAt: review.addedAt,
+      provider: review.provider,
+      providerId: review.providerId,
+      coverImageUrl: review.coverImageUrl,
+      visibility: review.visibility,
+      updatedAt: review.updatedAt,
+    },
+    index,
+  );
 }
 
 /** Board position is the array order; `rank` is kept in sync for the data file. */

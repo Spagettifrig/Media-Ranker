@@ -60,21 +60,33 @@ function resolveImageRequest(requestUrl) {
  * Persistence. Writes are atomic (tmp file + rename) and serialised,
  * so an autosave storm can never leave a half-written data file.
  * ------------------------------------------------------------------ */
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
+
+const emptyLibraries = () => ({ games: [], movies: [] });
 
 const emptyState = () => ({
   version: DATA_VERSION,
-  libraries: { games: [], movies: [] },
+  libraries: emptyLibraries(),
   settings: {},
+  // Which account (if any) adopted the pre-accounts local library. Set once,
+  // so a second account signing in on this machine starts empty instead of
+  // inheriting - and silently editing - the first account's collection.
+  claimedBy: null,
 });
 
 /**
  * v1 kept a single top-level `games` array. v2 keeps one array per library, so
- * older files are lifted into `libraries.games` on the way in. The file is
- * rewritten in the new shape by the next autosave; nothing is lost either way.
+ * older files are lifted into `libraries.games` on the way in. v3 adds
+ * `claimedBy` and moves a signed-in account's items into their own file; the
+ * arrays here stay the signed-out library. The file is rewritten in the new
+ * shape by the next autosave; nothing is lost either way.
  */
 function migrate(parsed) {
   if (!parsed || typeof parsed !== 'object') return emptyState();
+
+  const settings =
+    parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {};
+  const claimedBy = typeof parsed.claimedBy === 'string' ? parsed.claimedBy : null;
 
   if (parsed.libraries && typeof parsed.libraries === 'object') {
     const libraries = {};
@@ -83,8 +95,9 @@ function migrate(parsed) {
     }
     return {
       version: DATA_VERSION,
-      libraries: { games: [], movies: [], ...libraries },
-      settings: parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {},
+      libraries: { ...emptyLibraries(), ...libraries },
+      settings,
+      claimedBy,
     };
   }
 
@@ -92,20 +105,40 @@ function migrate(parsed) {
     return {
       version: DATA_VERSION,
       libraries: { games: parsed.games, movies: [] },
-      settings: parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {},
+      settings,
+      claimedBy,
     };
   }
 
   return emptyState();
 }
 
+/** Only the arrays live in an account file - settings stay device-wide in data.json. */
+function migrateAccount(parsed) {
+  if (!parsed || typeof parsed !== 'object' || !parsed.libraries) return null;
+  const libraries = {};
+  for (const [key, value] of Object.entries(parsed.libraries)) {
+    if (Array.isArray(value)) libraries[key] = value;
+  }
+  return { ...emptyLibraries(), ...libraries };
+}
+
+/** Supabase ids are uuids; strip anything else so an id can never escape the folder. */
+function accountDataFile(accountId) {
+  const safe = String(accountId).replace(/[^a-zA-Z0-9-]/g, '');
+  return path.join(userDataDir, `data-${safe}.json`);
+}
+
+async function readJson(file) {
+  const raw = await fsp.readFile(file, 'utf8');
+  // A stray byte-order mark (an editor, a hand-restored backup) would make
+  // JSON.parse throw and the file look corrupt, so drop it first.
+  return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+}
+
 async function readState() {
   try {
-    const raw = await fsp.readFile(dataFile, 'utf8');
-    // A stray byte-order mark (an editor, a hand-restored backup) would make
-    // JSON.parse throw and the file look corrupt, so drop it first.
-    const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
-    return migrate(JSON.parse(text));
+    return migrate(await readJson(dataFile));
   } catch (err) {
     if (err.code === 'ENOENT') return emptyState();
     // Corrupt file: keep a copy so nothing is silently destroyed.
@@ -116,20 +149,70 @@ async function readState() {
   }
 }
 
+/** `null` means "this account has never been opened on this machine". */
+async function readAccountLibraries(accountId) {
+  const file = accountDataFile(accountId);
+  try {
+    return migrateAccount(await readJson(file));
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    try {
+      await fsp.copyFile(file, `${file}.corrupt-${Date.now()}`);
+    } catch {}
+    return null;
+  }
+}
+
 let writeChain = Promise.resolve();
 
+/** Everything goes through one queue, so an autosave storm can't interleave writes. */
+function queueWrite(task) {
+  writeChain = writeChain.then(task).catch((err) => {
+    console.error('[game-ranker] failed to persist data:', err);
+  });
+  return writeChain;
+}
+
+async function atomicWrite(file, json) {
+  const tmp = `${file}.tmp`;
+  await fsp.writeFile(tmp, json, 'utf8');
+  await fsp.rename(tmp, file);
+}
+
 function writeState(state) {
-  writeChain = writeChain.then(async () => {
+  return queueWrite(async () => {
     const json = JSON.stringify(state, null, 2);
     await fsp.writeFile(tmpFile, json, 'utf8');
     try {
       await fsp.copyFile(dataFile, backupFile);
     } catch {}
     await fsp.rename(tmpFile, dataFile);
-  }).catch((err) => {
-    console.error('[game-ranker] failed to persist data:', err);
   });
-  return writeChain;
+}
+
+function writeAccountLibraries(accountId, libraries) {
+  return queueWrite(async () => {
+    await atomicWrite(
+      accountDataFile(accountId),
+      JSON.stringify({ version: DATA_VERSION, libraries }, null, 2),
+    );
+  });
+}
+
+/**
+ * data.json is read once and kept here: it holds the device-wide settings that
+ * every account shares, so it has to survive being rewritten while a signed-in
+ * account's items live in a separate file.
+ */
+let localState = null;
+
+async function loadLocalState() {
+  if (!localState) localState = await readState();
+  return localState;
+}
+
+function hasAnyItems(libraries) {
+  return Object.values(libraries ?? {}).some((list) => Array.isArray(list) && list.length > 0);
 }
 
 /* ------------------------------------------------------------------ *
@@ -349,6 +432,10 @@ if (!app.requestSingleInstanceLock()) {
     // same way `data:flush` is pushed today - the renderer never polls for it.
     supabase.onAuthStateChange((_event, session) => {
       mainWindow?.webContents.send('auth:changed', supabase.toPublicUser(session));
+      // Fire-and-forget, idempotent: covers session-restore on launch, where
+      // there's no IPC call from the renderer to await this on (signUp/signIn
+      // already await it directly for the interactive sign-in paths).
+      if (session?.user) supabase.ensureProfile(supabase.toPublicUser(session));
     });
 
     setupAutoUpdates();
@@ -367,24 +454,57 @@ if (!app.requestSingleInstanceLock()) {
  * IPC
  * ------------------------------------------------------------------ */
 function registerIpc() {
-  ipcMain.handle('data:load', async () => {
-    const state = await readState();
-    rememberCredentials(state.settings);
-    return state;
+  /**
+   * `accountId` null means signed out - the device's own library, exactly as
+   * before accounts existed. Signed in, the arrays come from that account's
+   * own file so two people sharing a machine never see (or overwrite) each
+   * other's rankings. Settings are device-wide either way.
+   */
+  ipcMain.handle('data:load', async (_event, accountId = null) => {
+    const local = await loadLocalState();
+    rememberCredentials(local.settings);
+
+    if (!accountId) {
+      return { version: DATA_VERSION, libraries: local.libraries, settings: local.settings };
+    }
+
+    let libraries = await readAccountLibraries(accountId);
+    if (!libraries) {
+      // First sign-in for this account on this machine. The pre-accounts
+      // library is handed to whoever signs in first and to nobody after that.
+      if (!local.claimedBy && hasAnyItems(local.libraries)) {
+        libraries = local.libraries;
+        local.claimedBy = accountId;
+        local.libraries = emptyLibraries();
+        await writeAccountLibraries(accountId, libraries);
+        await writeState(local);
+      } else {
+        libraries = emptyLibraries();
+      }
+    }
+
+    return { version: DATA_VERSION, libraries, settings: local.settings };
   });
 
-  ipcMain.handle('data:save', async (_event, state) => {
+  ipcMain.handle('data:save', async (_event, accountId, state) => {
     if (!state || !state.libraries || typeof state.libraries !== 'object') return false;
     const libraries = {};
     for (const [key, value] of Object.entries(state.libraries)) {
       if (Array.isArray(value)) libraries[key] = value;
     }
-    rememberCredentials(state.settings);
-    await writeState({
-      version: DATA_VERSION,
-      libraries,
-      settings: state.settings && typeof state.settings === 'object' ? state.settings : {},
-    });
+
+    const local = await loadLocalState();
+    local.settings = state.settings && typeof state.settings === 'object' ? state.settings : {};
+    rememberCredentials(local.settings);
+
+    if (accountId) {
+      // data.json is still rewritten: it owns the settings every account shares.
+      await writeAccountLibraries(accountId, libraries);
+      await writeState(local);
+    } else {
+      local.libraries = libraries;
+      await writeState(local);
+    }
     return true;
   });
 
@@ -509,6 +629,50 @@ function registerIpc() {
   ipcMain.handle('auth:getUser', async () => {
     return supabase.toPublicUser(await supabase.getSession());
   });
+
+  /* ---- profile ----------------------------------------------------------- */
+  ipcMain.handle('sync:getProfile', async () => supabase.getProfile());
+
+  ipcMain.handle('sync:updateProfile', async (_event, { defaultVisibility } = {}) =>
+    supabase.updateProfile({ defaultVisibility }),
+  );
+
+  /* ---- reviews: push sync + the social feed's read queries -------------- */
+  ipcMain.handle('sync:pushReview', async (_event, libraryKey, item) => {
+    const result = await supabase.pushReview(libraryKey, item);
+    // The renderer fires these and forgets them, so an unlogged failure is an
+    // invisible one - a review that silently never reaches anyone else.
+    if (!result.ok) console.error('[game-ranker] could not push review:', result.error);
+    return result;
+  });
+
+  ipcMain.handle('sync:deleteReview', async (_event, id) => supabase.deleteReview(id));
+
+  /**
+   * Rebuild-from-cloud: your own reviews, with their catalog covers pulled
+   * back down into the local images folder so a fresh machine shows art
+   * instead of empty cards. The renderer merges these into whatever is
+   * already on disk - it never blindly replaces it.
+   */
+  ipcMain.handle('sync:pullLibrary', async () => {
+    const result = await supabase.fetchMyReviews();
+    if (!result.ok) return result;
+
+    const reviews = [];
+    for (const review of result.reviews) {
+      const file = review.coverImageUrl ? await downloadIntoLibrary(review.coverImageUrl) : null;
+      reviews.push({ ...review, file });
+    }
+    return { ok: true, reviews };
+  });
+
+  ipcMain.handle('sync:fetchPublicReviews', async (_event, provider, providerId) =>
+    supabase.fetchPublicReviews(provider, providerId),
+  );
+
+  ipcMain.handle('sync:fetchProfileReviews', async (_event, userId) =>
+    supabase.fetchProfileReviews(userId),
+  );
 
   /* ---- auto-update ----------------------------------------------------- */
   ipcMain.handle('update:install', () => {

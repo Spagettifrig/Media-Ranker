@@ -104,6 +104,8 @@ export default function SettingsView({
   onSignUp,
   onSignIn,
   onSignOut,
+  profile,
+  onDefaultVisibilityChange,
   onClose,
 }) {
   const ref = useRef(null);
@@ -246,7 +248,14 @@ export default function SettingsView({
             </div>
           </section>
 
-          <AccountSection user={user} onSignUp={onSignUp} onSignIn={onSignIn} onSignOut={onSignOut} />
+          <AccountSection
+            user={user}
+            onSignUp={onSignUp}
+            onSignIn={onSignIn}
+            onSignOut={onSignOut}
+            profile={profile}
+            onDefaultVisibilityChange={onDefaultVisibilityChange}
+          />
 
           <section className="settings__section">
             <h3 className="keys__title">Keyboard shortcuts</h3>
@@ -303,7 +312,7 @@ export default function SettingsView({
  * offline app as before. Email+password only for now, so there is no
  * browser hop to bounce back into the desktop window from.
  */
-function AccountSection({ user, onSignUp, onSignIn, onSignOut }) {
+function AccountSection({ user, onSignUp, onSignIn, onSignOut, profile, onDefaultVisibilityChange }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
@@ -320,6 +329,7 @@ function AccountSection({ user, onSignUp, onSignIn, onSignOut }) {
   }
 
   if (user) {
+    const defaultVisibility = profile?.defaultVisibility ?? 'private';
     return (
       <section className="settings__section">
         <h3 className="keys__title">Account</h3>
@@ -334,6 +344,37 @@ function AccountSection({ user, onSignUp, onSignIn, onSignOut }) {
           <button type="button" className="btn btn--ghost btn--sm" onClick={onSignOut}>
             Sign out
           </button>
+        </div>
+
+        <div className="settings__row">
+          <div>
+            <p className="settings__row-title">Default review visibility</p>
+            <p className="settings__row-desc">
+              Whether a new review is visible to other users by default. Any single
+              review can still be overridden from its own page — see it there as
+              Inherit / Public / Private.
+            </p>
+          </div>
+          <div className="segmented" role="radiogroup" aria-label="Default review visibility">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={defaultVisibility === 'private'}
+              className={`segmented__item${defaultVisibility === 'private' ? ' is-on' : ''}`}
+              onClick={() => onDefaultVisibilityChange('private')}
+            >
+              Private
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={defaultVisibility === 'public'}
+              className={`segmented__item${defaultVisibility === 'public' ? ' is-on' : ''}`}
+              onClick={() => onDefaultVisibilityChange('public')}
+            >
+              Public
+            </button>
+          </div>
         </div>
       </section>
     );

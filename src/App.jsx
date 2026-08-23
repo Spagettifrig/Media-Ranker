@@ -4,6 +4,7 @@ import BoardView from './components/BoardView.jsx';
 import CompareView from './components/CompareView.jsx';
 import DetailView from './components/DetailView.jsx';
 import FilterBar from './components/FilterBar.jsx';
+import ProfileView from './components/ProfileView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import StatsView from './components/StatsView.jsx';
@@ -12,6 +13,7 @@ import {
   allImagesOf,
   clampHours,
   createItem,
+  itemFromReview,
   normalizeDate,
   normalizeItem,
   titleFromFileName,
@@ -31,6 +33,7 @@ import { exportFileName, renderRankingImage } from './lib/export-image.js';
 import { DEFAULT_COVER_ASPECT, normalizeCoverAspect } from './lib/settings.js';
 
 const AUTOSAVE_DELAY_MS = 200;
+const REVIEW_PUSH_DELAY_MS = 600;
 const TOAST_MS = 6000;
 
 /** Catalog credentials. Persisted alongside the other settings, never bundled. */
@@ -46,6 +49,31 @@ const settingsPayload = ({ theme, coverAspect, credentials }) => ({
 });
 
 const emptyLibraries = () => Object.fromEntries(LIBRARIES.map((library) => [library.key, []]));
+
+/**
+ * Fold this account's cloud reviews into what's already on this machine.
+ * Local wins ties, and keeps the things the cloud has no opinion about -
+ * imported images, gallery order, board position - so a pull can never wipe
+ * artwork off a board it didn't put there.
+ */
+function mergeCloudItems(localItems, cloudItems) {
+  const cloudById = new Map(cloudItems.map((item) => [item.id, item]));
+  const merged = localItems.map((item) => {
+    const cloud = cloudById.get(item.id);
+    if (!cloud) return item;
+    cloudById.delete(item.id);
+    if (Date.parse(cloud.updatedAt) <= Date.parse(item.updatedAt)) return item;
+    return {
+      ...cloud,
+      mainImage: item.mainImage ?? cloud.mainImage,
+      galleryImages: item.galleryImages,
+      firstPlayed: item.firstPlayed,
+      rank: item.rank,
+    };
+  });
+  // Anything left is only in the cloud - a different machine ranked it.
+  return withRanks([...merged, ...cloudById.values()]);
+}
 
 /** Each library remembers where you were, so switching back is not a reset. */
 const emptyUiState = () =>
@@ -71,10 +99,21 @@ export default function App() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [toast, setToast] = useState(null);
   const [user, setUser] = useState(null); // null = signed out; never written to data.json
+  const [authResolved, setAuthResolved] = useState(false);
+  const [profile, setProfile] = useState(null); // {username, displayName, defaultVisibility} or null
+  const [profileTarget, setProfileTarget] = useState(null); // {id, displayName} or null - opens ProfileView
+
+  const pendingReviewPushes = useRef(new Set());
 
   const searchRef = useRef(null);
   const latest = useRef({ libraries, theme, coverAspect, credentials });
   latest.current = { libraries, theme, coverAspect, credentials };
+
+  /** Whose library is currently in `libraries` - every save has to name it. */
+  const accountId = user?.id ?? null;
+  const loadedAccount = useRef(null);
+  const readyRef = useRef(false);
+  readyRef.current = ready;
 
   const config = libraryConfig(library);
   const items = libraries[library] ?? [];
@@ -84,7 +123,11 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     window.api.getCurrentUser().then((current) => {
-      if (!cancelled) setUser(current);
+      if (cancelled) return;
+      setUser(current);
+      // Gates the first load, so a signed-in launch reads the account's own
+      // library straight away instead of flashing the signed-out one first.
+      setAuthResolved(true);
     });
     return () => {
       cancelled = true;
@@ -124,11 +167,45 @@ export default function App() {
     setUser(null);
   }, []);
 
-  /* ---- initial load -------------------------------------------------- */
+  /* ---- profile: the public identity behind everything in the social feed */
   useEffect(() => {
     let cancelled = false;
+    if (!user) {
+      setProfile(null);
+      return undefined;
+    }
+    window.api.getProfile().then((response) => {
+      if (!cancelled && response?.ok) setProfile(response.profile);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const updateDefaultVisibility = useCallback(async (value) => {
+    setProfile((prev) => (prev ? { ...prev, defaultVisibility: value } : prev));
+    const response = await window.api.updateProfile(value);
+    if (!response?.ok) {
+      setToast({ kind: 'error', message: response?.error ?? 'Could not update default visibility.' });
+    }
+  }, []);
+
+  /* ---- load: once auth is known, and again whenever the account changes */
+  useEffect(() => {
+    if (!authResolved) return undefined;
+    let cancelled = false;
     (async () => {
-      const saved = await window.api.load();
+      // Hand what's on screen back to the account it belongs to before
+      // switching, or the last few edits would land in the wrong file.
+      if (readyRef.current) {
+        await window.api.save(loadedAccount.current, {
+          libraries: latest.current.libraries,
+          settings: settingsPayload(latest.current),
+        });
+      }
+      setReady(false);
+
+      const saved = await window.api.load(accountId);
       if (cancelled) return;
       const loaded = emptyLibraries();
       for (const entry of LIBRARIES) {
@@ -139,7 +216,23 @@ export default function App() {
             .sort((a, b) => a.rank - b.rank),
         );
       }
-      setLibraries(loaded);
+
+      // Signed in: fold in anything ranked on another machine. Failure here is
+      // not fatal - an offline launch just works from what's already on disk.
+      if (accountId) {
+        const pulled = await window.api.pullLibrary();
+        if (cancelled) return;
+        if (pulled?.ok) {
+          for (const entry of LIBRARIES) {
+            const cloudItems = pulled.reviews
+              .filter((review) => review.libraryKey === entry.key)
+              .map((review, index) => itemFromReview(entry.key, review, index));
+            loaded[entry.key] = mergeCloudItems(loaded[entry.key], cloudItems);
+          }
+        }
+      }
+      if (cancelled) return;
+
       if (saved?.settings?.theme === 'light' || saved?.settings?.theme === 'dark') {
         setTheme(saved.settings.theme);
       }
@@ -152,12 +245,16 @@ export default function App() {
         if (typeof value === 'string') loadedCredentials[key] = value;
       }
       setCredentials(loadedCredentials);
+
+      loadedAccount.current = accountId;
+      setLibraries(loaded);
+      setUi(emptyUiState());
       setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authResolved, accountId]);
 
   /* ---- theme --------------------------------------------------------- */
   useEffect(() => {
@@ -174,7 +271,7 @@ export default function App() {
     if (!ready) return undefined;
     setSaveState('saving');
     const timer = setTimeout(async () => {
-      await window.api.save({
+      await window.api.save(loadedAccount.current, {
         libraries: latest.current.libraries,
         settings: settingsPayload(latest.current),
       });
@@ -187,7 +284,7 @@ export default function App() {
   useEffect(() => {
     const flush = () => {
       if (ready) {
-        window.api.save({
+        window.api.save(loadedAccount.current, {
           libraries: latest.current.libraries,
           settings: settingsPayload(latest.current),
         });
@@ -206,7 +303,7 @@ export default function App() {
     return window.api.onFlush(async () => {
       try {
         if (ready) {
-          await window.api.save({
+          await window.api.save(loadedAccount.current, {
             libraries: latest.current.libraries,
             settings: settingsPayload(latest.current),
           });
@@ -216,6 +313,29 @@ export default function App() {
       }
     });
   }, [ready]);
+
+  /**
+   * One-directional push sync: whatever changed locally on a catalog-linked
+   * item goes up to Supabase, debounced like autosave. Nothing ever pulls
+   * another device's (or another user's) data back into `libraries` - the
+   * social feed queries live instead (see CommunityReviews/ProfileView).
+   */
+  useEffect(() => {
+    if (!ready || !user) return undefined;
+    const timer = setTimeout(() => {
+      const ids = [...pendingReviewPushes.current];
+      pendingReviewPushes.current.clear();
+      for (const id of ids) {
+        for (const entry of LIBRARIES) {
+          const item = latest.current.libraries[entry.key]?.find((candidate) => candidate.id === id);
+          if (!item) continue;
+          if (item.provider && item.providerId) window.api.pushReview(entry.key, item);
+          break;
+        }
+      }
+    }, REVIEW_PUSH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [libraries, user, ready]);
 
   useEffect(() => {
     // An update-ready toast is actionable, not a status blip - it stays until
@@ -248,7 +368,12 @@ export default function App() {
   const patchItem = useCallback(
     (id, patch) => {
       patchLibrary((list) =>
-        list.map((item) => (item.id === id ? { ...item, ...patch(item) } : item)),
+        list.map((item) => {
+          if (item.id !== id) return item;
+          const next = { ...item, ...patch(item), updatedAt: new Date().toISOString() };
+          if (next.provider && next.providerId) pendingReviewPushes.current.add(id);
+          return next;
+        }),
       );
     },
     [patchLibrary],
@@ -307,6 +432,11 @@ export default function App() {
     [patchItem, config],
   );
 
+  const setVisibility = useCallback(
+    (id, value) => patchItem(id, () => ({ visibility: value })),
+    [patchItem],
+  );
+
   const reorder = useCallback(
     (nextOrder) => patchLibrary(() => withRanks(nextOrder)),
     [patchLibrary],
@@ -360,9 +490,13 @@ export default function App() {
         genres,
         modes,
         hoursPlayed: entry.hours,
+        provider: entry.provider,
+        providerId: entry.remoteId,
+        coverImageUrl: entry.imageUrl,
       });
 
       patchLibrary((list) => withRanks([...list, created]));
+      if (created.provider && created.providerId) pendingReviewPushes.current.add(created.id);
       setShowCatalog(false);
       patchUi({ openId: created.id, view: 'board' });
       if (!entry.file) {
@@ -425,7 +559,10 @@ export default function App() {
     (id) => {
       patchLibrary((list) => {
         const target = list.find((item) => item.id === id);
-        if (target) window.api.deleteImages(allImagesOf(target));
+        if (target) {
+          window.api.deleteImages(allImagesOf(target));
+          if (user && target.provider && target.providerId) window.api.deleteReview(id);
+        }
         return withRanks(list.filter((item) => item.id !== id));
       });
       setUi((prev) => {
@@ -440,7 +577,7 @@ export default function App() {
         };
       });
     },
-    [library, patchLibrary],
+    [library, patchLibrary, user],
   );
 
   /* ---- derived view -------------------------------------------------- */
@@ -614,8 +751,13 @@ export default function App() {
           onSignUp={signUp}
           onSignIn={signIn}
           onSignOut={signOut}
+          profile={profile}
+          onDefaultVisibilityChange={updateDefaultVisibility}
           onClose={() => setShowSettings(false)}
         />
+      ) : null}
+      {profileTarget ? (
+        <ProfileView target={profileTarget} onClose={() => setProfileTarget(null)} />
       ) : null}
       {showCatalog ? (
         <AddFromCatalog
@@ -678,6 +820,9 @@ export default function App() {
             onFirstPlayedChange={(value) => setFirstPlayed(openItem.id, value)}
             onToggleGenre={(key) => toggleGenre(openItem.id, key)}
             onToggleMode={(key) => toggleMode(openItem.id, key)}
+            user={user}
+            onVisibilityChange={(value) => setVisibility(openItem.id, value)}
+            onOpenProfile={setProfileTarget}
           />
         </main>
       </div>
