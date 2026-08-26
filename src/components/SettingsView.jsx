@@ -106,6 +106,10 @@ export default function SettingsView({
   onSignOut,
   profile,
   onDefaultVisibilityChange,
+  appVersion,
+  updateStatus,
+  onCheckForUpdates,
+  onInstallUpdate,
   onClose,
 }) {
   const ref = useRef(null);
@@ -255,6 +259,13 @@ export default function SettingsView({
             onSignOut={onSignOut}
             profile={profile}
             onDefaultVisibilityChange={onDefaultVisibilityChange}
+          />
+
+          <UpdateSection
+            appVersion={appVersion}
+            updateStatus={updateStatus}
+            onCheckForUpdates={onCheckForUpdates}
+            onInstallUpdate={onInstallUpdate}
           />
 
           <section className="settings__section">
@@ -438,6 +449,69 @@ function AccountSection({ user, onSignUp, onSignIn, onSignOut, profile, onDefaul
       </div>
     </section>
   );
+}
+
+/**
+ * The app already checks for updates on its own - at launch and every four
+ * hours - and downloads and prompts silently when it finds one (see the
+ * "update ready" toast). This is purely a convenience for "check right now"
+ * instead of waiting or having to fully close and reopen the app, which is
+ * otherwise the only way to force an immediate check.
+ */
+function UpdateSection({ appVersion, updateStatus, onCheckForUpdates, onInstallUpdate }) {
+  const status = updateStatus?.status ?? 'idle';
+  const checking = status === 'checking';
+
+  return (
+    <section className="settings__section">
+      <h3 className="keys__title">Updates</h3>
+      <div className="settings__row">
+        <div>
+          <p className="settings__row-title">
+            {appVersion ? `Version ${appVersion}` : 'Checking version…'}
+          </p>
+          <p className="settings__row-desc">{updateStatusText(status, updateStatus)}</p>
+        </div>
+        {status === 'ready' ? (
+          <button type="button" className="btn btn--primary btn--sm" onClick={onInstallUpdate}>
+            Restart & update
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={onCheckForUpdates}
+            disabled={checking}
+          >
+            {checking ? 'Checking…' : 'Check for updates'}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function updateStatusText(status, updateStatus) {
+  switch (status) {
+    case 'checking':
+      return 'Checking for updates…';
+    case 'downloading':
+      return updateStatus?.version
+        ? `Downloading version ${updateStatus.version}…`
+        : 'Downloading the update…';
+    case 'not-available':
+      return "You're on the latest version.";
+    case 'ready':
+      return updateStatus?.version
+        ? `Version ${updateStatus.version} is downloaded and ready.`
+        : 'An update is downloaded and ready.';
+    case 'error':
+      return updateStatus?.message ? `Could not check: ${updateStatus.message}` : 'Could not check for updates.';
+    default:
+      // Idle: a check already ran automatically when the app opened, so
+      // there is nothing stale-sounding to say here - just what the button is for.
+      return 'Checks automatically every few hours. Updates download in the background and only need a restart to finish.';
+  }
 }
 
 function SunIcon() {

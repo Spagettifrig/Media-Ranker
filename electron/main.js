@@ -378,13 +378,43 @@ function createWindow() {
  * ------------------------------------------------------------------ */
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
+/**
+ * Set only while a manual (button-triggered) check is in flight, so the
+ * chatty events below - "checking", "not available", "error" - reach the
+ * renderer just for that click and stay silent for the automatic checks that
+ * fire on launch and every four hours. Those still log on failure; they just
+ * never interrupt anyone who didn't ask.
+ */
+let manualCheckPending = false;
+
 function setupAutoUpdates() {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  autoUpdater.on('checking-for-update', () => {
+    if (manualCheckPending) mainWindow?.webContents.send('update:status', { status: 'checking' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    if (manualCheckPending) {
+      mainWindow?.webContents.send('update:status', {
+        status: 'downloading',
+        version: info?.version ?? null,
+      });
+    }
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (manualCheckPending) {
+      mainWindow?.webContents.send('update:status', { status: 'not-available' });
+      manualCheckPending = false;
+    }
+  });
+
   autoUpdater.on('update-downloaded', (info) => {
+    manualCheckPending = false;
     mainWindow?.webContents.send('update:status', {
       status: 'ready',
       version: info?.version ?? null,
@@ -392,9 +422,14 @@ function setupAutoUpdates() {
   });
 
   // A failed check is a normal thing (offline, GitHub hiccup) - log it and
-  // try again on the next interval rather than bothering anyone about it.
+  // try again on the next interval rather than bothering anyone about it,
+  // unless someone just pressed the button and is actually waiting on it.
   autoUpdater.on('error', (err) => {
     console.error('[game-ranker] auto-update check failed:', err);
+    if (manualCheckPending) {
+      mainWindow?.webContents.send('update:status', { status: 'error', message: err.message });
+      manualCheckPending = false;
+    }
   });
 
   autoUpdater.checkForUpdates().catch(() => {});
@@ -724,6 +759,28 @@ function registerIpc() {
   ipcMain.handle('awards:history', async (_event, libraryKey) => awards.history(libraryKey));
 
   /* ---- auto-update ----------------------------------------------------- */
+  ipcMain.handle('app:version', () => app.getVersion());
+
+  /**
+   * The button in Settings. Everything else about updating already runs on
+   * its own (launch + every 4 hours); this just lets someone say "now"
+   * instead of waiting or relaunching. Result arrives asynchronously over
+   * the same 'update:status' channel the background checks use.
+   */
+  ipcMain.handle('update:check', async () => {
+    if (!app.isPackaged) {
+      return { ok: false, error: 'Updates only run in the installed app, not this dev build.' };
+    }
+    manualCheckPending = true;
+    try {
+      await autoUpdater.checkForUpdates();
+      return { ok: true };
+    } catch (err) {
+      manualCheckPending = false;
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('update:install', () => {
     // Triggers the normal quit path (same `close` handler, same data flush)
     // before relaunching into the new version.

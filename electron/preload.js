@@ -160,7 +160,22 @@ contextBridge.exposeInMainWorld('api', {
   /** Every finished season, newest first - the Hall of Fame. */
   awardHistory: (libraryKey) => ipcRenderer.invoke('awards:history', libraryKey),
 
-  /** Fires once a background-downloaded update is ready to install. */
+  /** The installed app's own version string, e.g. "1.4.0". Same in dev and packaged. */
+  getAppVersion: () => ipcRenderer.invoke('app:version'),
+
+  /**
+   * Ask right now instead of waiting for the next automatic check. Resolves
+   * once the check has started - the outcome (checking / downloading / not
+   * available / ready / error) arrives separately over `onUpdateStatus`.
+   * No-ops with an explanatory error in a dev build, which has no update feed.
+   */
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+
+  /**
+   * Fires for every step of a manual check (checking, downloading, not
+   * available, error) and for a background download finishing on its own
+   * (ready) - that last one is the only kind the app surfaces unprompted.
+   */
   onUpdateStatus: (callback) => {
     const handler = (_event, status) => callback(status);
     ipcRenderer.on('update:status', handler);

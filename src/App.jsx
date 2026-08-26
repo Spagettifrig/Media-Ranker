@@ -157,9 +157,23 @@ export default function App() {
 
   useEffect(() => window.api.onAuthChange(setUser), []);
 
-  /* ---- auto-update: a background download finished, ready to install -- */
+  /* ---- auto-update ------------------------------------------------------
+   * `updateStatus` is what the Settings button reads back - checking,
+   * downloading, up to date, or an error, all scoped to a manual check the
+   * main process only reports because someone actually clicked the button.
+   * A "ready" download still also raises the toast below regardless of how
+   * it was found, since that one is worth surfacing unprompted.
+   * ------------------------------------------------------------------- */
+  const [appVersion, setAppVersion] = useState(null);
+  const [updateStatus, setUpdateStatus] = useState({ status: 'idle' });
+
+  useEffect(() => {
+    window.api.getAppVersion().then(setAppVersion);
+  }, []);
+
   useEffect(() => {
     return window.api.onUpdateStatus((status) => {
+      setUpdateStatus(status ?? { status: 'idle' });
       if (status?.status === 'ready') {
         setToast({
           kind: 'update',
@@ -167,6 +181,17 @@ export default function App() {
         });
       }
     });
+  }, []);
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdateStatus({ status: 'checking' });
+    const response = await window.api.checkForUpdates();
+    // A rejection here means the request never reached the updater at all
+    // (dev build, no feed) - the main process's own events cover every
+    // outcome once it does, so there is nothing to set on success.
+    if (!response?.ok) {
+      setUpdateStatus({ status: 'error', message: response?.error ?? 'Could not check for updates.' });
+    }
   }, []);
 
   const signUp = useCallback(async (email, password) => {
@@ -890,6 +915,10 @@ export default function App() {
           onSignOut={signOut}
           profile={profile}
           onDefaultVisibilityChange={updateDefaultVisibility}
+          appVersion={appVersion}
+          updateStatus={updateStatus}
+          onCheckForUpdates={checkForUpdates}
+          onInstallUpdate={() => window.api.installUpdate()}
           onClose={() => setShowSettings(false)}
         />
       ) : null}
