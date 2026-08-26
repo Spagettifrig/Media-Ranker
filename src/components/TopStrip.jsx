@@ -4,6 +4,7 @@ export const VIEWS = [
   { key: 'board', label: 'Board' },
   { key: 'stats', label: 'Stats' },
   { key: 'compare', label: 'Compare' },
+  { key: 'awards', label: 'Awards' },
 ];
 
 /**
@@ -46,7 +47,7 @@ export default function TopStrip({
             className={`tab${view === item.key ? ' is-active' : ''}`}
             onClick={() => onViewChange(item.key)}
           >
-            {item.key === 'board' ? <GridIcon /> : item.key === 'stats' ? <ChartIcon /> : <CompareIcon />}
+            <TabIcon view={item.key} />
             {item.label}
           </button>
         ))}
@@ -72,6 +73,23 @@ export default function TopStrip({
         </button>
       </div>
     </header>
+  );
+}
+
+function TabIcon({ view }) {
+  if (view === 'board') return <GridIcon />;
+  if (view === 'stats') return <ChartIcon />;
+  if (view === 'compare') return <CompareIcon />;
+  return <TrophyTabIcon />;
+}
+
+function TrophyTabIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4.6 2.2h6.8v4a3.4 3.4 0 0 1-6.8 0v-4Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M4.6 3.4H2.8v1.2a2.2 2.2 0 0 0 2 2.19M11.4 3.4h1.8v1.2a2.2 2.2 0 0 1-2 2.19" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M8 9.6v2.4M5.6 13.8h4.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 

@@ -244,6 +244,37 @@ function pendingWrites() {
  * back into this app - only items with a catalog identity ever go up, and
  * only what RLS already allows ever comes back down.
  * ------------------------------------------------------------------ */
+/** One local item as a `reviews` row. Shared so a single push and a bulk one can never drift. */
+function reviewRow(libraryKey, item, userId) {
+  return {
+    id: item.id,
+    user_id: userId,
+    library_key: libraryKey,
+    provider: item.provider,
+    provider_id: String(item.providerId),
+    title: item.title,
+    overall_score: item.overallScore,
+    category_scores: item.categoryScores ?? {},
+    // Needed so an N/A category cannot drag a Critics' Choice average
+    // around - a score of 50 that the user explicitly disowned is not
+    // an opinion about the game.
+    disabled_categories: item.disabledCategories ?? [],
+    notes: item.descriptions ?? {},
+    genres: item.genres ?? [],
+    modes: item.modes ?? [],
+    hours_played: item.hoursPlayed,
+    // Both of these are what awards eligibility is decided on, so they
+    // have to be the same on every device and on the server. `''` is
+    // the app's "no date", which Postgres wants as NULL.
+    first_played: item.firstPlayed || null,
+    release_year: item.releaseYear ?? null,
+    cover_image_url: item.coverImageUrl ?? null,
+    visibility: item.visibility ?? 'inherit',
+    deleted_at: null,
+    updated_at: item.updatedAt ?? new Date().toISOString(),
+  };
+}
+
 async function pushReview(libraryKey, item) {
   if (!item?.provider || !item?.providerId) return { ok: false, error: 'No catalog identity.' };
   try {
@@ -253,29 +284,44 @@ async function pushReview(libraryKey, item) {
 
     const { error } = await getClient()
       .from('reviews')
-      .upsert(
-        {
-          id: item.id,
-          user_id: userId,
-          library_key: libraryKey,
-          provider: item.provider,
-          provider_id: String(item.providerId),
-          title: item.title,
-          overall_score: item.overallScore,
-          category_scores: item.categoryScores ?? {},
-          notes: item.descriptions ?? {},
-          genres: item.genres ?? [],
-          modes: item.modes ?? [],
-          hours_played: item.hoursPlayed,
-          cover_image_url: item.coverImageUrl ?? null,
-          visibility: item.visibility ?? 'inherit',
-          deleted_at: null,
-          updated_at: item.updatedAt ?? new Date().toISOString(),
-        },
-        { onConflict: 'id' },
-      );
+      .upsert(reviewRow(libraryKey, item, userId), { onConflict: 'id' });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/** How many rows go up per request. Big enough to be one round trip for most boards. */
+const PUSH_CHUNK = 100;
+
+/**
+ * Push a whole library at once.
+ *
+ * Used for the one-time backfill after the awards upgrade: `first_played`
+ * never used to leave the device, so every row already in the cloud has it
+ * null - and six of the nine game categories are decided on it. Pushing one
+ * item at a time would mean hundreds of parallel requests, so this is a
+ * handful of bulk upserts instead.
+ */
+async function pushReviews(libraryKey, items) {
+  try {
+    const session = await getSession();
+    const userId = session?.user?.id;
+    if (!userId) return { ok: false, error: 'Not signed in.' };
+
+    const rows = (items ?? [])
+      .filter((item) => item?.provider && item?.providerId)
+      .map((item) => reviewRow(libraryKey, item, userId));
+    if (rows.length === 0) return { ok: true, pushed: 0 };
+
+    for (let i = 0; i < rows.length; i += PUSH_CHUNK) {
+      const { error } = await getClient()
+        .from('reviews')
+        .upsert(rows.slice(i, i + PUSH_CHUNK), { onConflict: 'id' });
+      if (error) return { ok: false, error: error.message };
+    }
+    return { ok: true, pushed: rows.length };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -362,7 +408,7 @@ async function fetchMyReviews() {
     const { data, error } = await getClient()
       .from('reviews')
       .select(
-        'id, library_key, provider, provider_id, title, overall_score, category_scores, notes, genres, modes, hours_played, cover_image_url, visibility, updated_at, created_at',
+        'id, library_key, provider, provider_id, title, overall_score, category_scores, disabled_categories, notes, genres, modes, hours_played, first_played, release_year, cover_image_url, visibility, updated_at, created_at',
       )
       .eq('user_id', userId)
       .is('deleted_at', null);
@@ -378,10 +424,13 @@ async function fetchMyReviews() {
         title: row.title,
         overallScore: row.overall_score,
         categoryScores: row.category_scores ?? {},
+        disabledCategories: row.disabled_categories ?? [],
         descriptions: row.notes ?? {},
         genres: row.genres ?? [],
         modes: row.modes ?? [],
         hoursPlayed: row.hours_played,
+        firstPlayed: row.first_played ?? '',
+        releaseYear: row.release_year,
         coverImageUrl: row.cover_image_url,
         visibility: row.visibility,
         updatedAt: row.updated_at,
@@ -428,6 +477,10 @@ async function fetchProfileReviews(userId) {
 }
 
 module.exports = {
+  // Exported for awards.js, which needs the same authenticated client - a
+  // second createClient() would mean a second session and a second token
+  // refresh racing this one over the same auth.json.
+  getClient,
   signUp,
   signIn,
   signOut,
@@ -439,6 +492,7 @@ module.exports = {
   getProfile,
   updateProfile,
   pushReview,
+  pushReviews,
   deleteReview,
   fetchMyReviews,
   fetchPublicReviews,

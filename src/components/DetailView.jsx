@@ -3,8 +3,11 @@ import CommunityReviews from './CommunityReviews.jsx';
 import ScoreSlider from './ScoreSlider.jsx';
 import SaveIndicator from './SaveIndicator.jsx';
 import TagChips from './TagChips.jsx';
+import TrophyBadge from './TrophyBadge.jsx';
 import { ordinal } from '../lib/score.js';
 import { allImagesOf } from '../lib/model.js';
+import { trophiesFor, trophyTitle } from '../lib/awards.js';
+import { hasPlatforms, platformGroups } from '../lib/media.js';
 import { formatDate, formatHours } from '../lib/stats.js';
 
 const VISIBILITY_OPTIONS = [
@@ -35,12 +38,15 @@ export default function DetailView({
   onFirstPlayedChange,
   onToggleGenre,
   onToggleMode,
+  onTogglePlatform,
   onToggleCategoryApplicable,
+  trophies,
   user,
   onVisibilityChange,
   onOpenProfile,
 }) {
   const images = allImagesOf(item);
+  const won = trophiesFor(trophies, item);
   const [index, setIndex] = useState(0);
   const swipeStart = useRef(null);
 
@@ -225,6 +231,7 @@ export default function DetailView({
         </div>
 
         <div className="detail__header-actions">
+          {won.length > 0 ? <TrophyBadge trophies={won} size="lg" /> : null}
           <SaveIndicator state={saveState} />
           <button type="button" className="btn btn--danger-ghost" onClick={handleDelete}>
             Delete
@@ -351,7 +358,41 @@ export default function DetailView({
               ariaLabel={config.modesLabel}
             />
           </div>
+
+          {/* Grouped by console family, and multi-select on purpose: playing
+              the same game on a 360 and later on a PC is the normal case. */}
+          {hasPlatforms(config) ? (
+            <div className="tagging__group tagging__group--wide">
+              <span className="field__label">{config.platformsLabel}</span>
+              <div className="platforms">
+                {platformGroups(config).map((group) => (
+                  <div key={group.label} className="platforms__group">
+                    <span className="platforms__family">{group.label}</span>
+                    <TagChips
+                      tags={group.platforms}
+                      selected={item.platforms}
+                      onToggle={onTogglePlatform}
+                      ariaLabel={`${config.platformsLabel} - ${group.label}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
+
+        {won.length > 0 ? (
+          <section className="detail__trophies" aria-label="Awards">
+            {won.map((trophy) => (
+              <span
+                key={`${trophy.year}-${trophy.categoryKey}-${trophy.kind}`}
+                className={`detail__trophy detail__trophy--${trophy.kind}`}
+              >
+                {trophyTitle(trophy)}
+              </span>
+            ))}
+          </section>
+        ) : null}
 
         <section className="playlog" aria-label="Log">
           <label className="field">

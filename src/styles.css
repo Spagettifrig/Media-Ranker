@@ -2985,3 +2985,664 @@ kbd {
     padding-right: 24px;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Platforms
+ *
+ * Grouped by console family in both the detail page and the filter bar,
+ * which is why the markup and the styling are shared between them.
+ * ------------------------------------------------------------------ */
+.platforms {
+  display: grid;
+  gap: 12px;
+}
+
+.tagging__group--wide,
+.filters__group--wide {
+  grid-column: 1 / -1;
+}
+
+.platforms__group {
+  display: grid;
+  gap: 7px;
+}
+
+.platforms__family {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * Trophies
+ *
+ * Gold is the voted award, cool grey the computed one - two different
+ * claims about a game, and they are often not the same game.
+ * ------------------------------------------------------------------ */
+:root,
+:root[data-theme='dark'] {
+  --gold: #e8b84b;
+  --gold-soft: rgba(232, 184, 75, 0.16);
+  --silver: #a9b4c8;
+  --silver-soft: rgba(169, 180, 200, 0.14);
+}
+
+:root[data-theme='light'] {
+  --gold: #a97c10;
+  --gold-soft: rgba(169, 124, 16, 0.13);
+  --silver: #5d6779;
+  --silver-soft: rgba(93, 103, 121, 0.12);
+}
+
+.trophies {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.trophy {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.trophy--community {
+  color: var(--gold);
+  background: var(--gold-soft);
+  border-color: color-mix(in srgb, var(--gold) 34%, transparent);
+}
+
+.trophy--critics {
+  color: var(--silver);
+  background: var(--silver-soft);
+  border-color: color-mix(in srgb, var(--silver) 30%, transparent);
+}
+
+.trophies--lg .trophy {
+  width: 26px;
+  height: 26px;
+}
+
+.trophy__more {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+/* Top-right of the cover, opposite the ranking position. */
+.card__trophies {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(10, 12, 15, 0.62);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.detail__trophies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail__trophy {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.detail__trophy--community {
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.detail__trophy--critics {
+  color: var(--silver);
+  background: var(--silver-soft);
+}
+
+/* ------------------------------------------------------------------ *
+ * Awards tab
+ * ------------------------------------------------------------------ */
+.awards {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  padding: 24px 32px 72px;
+  max-width: 1040px;
+}
+
+.awards__loading {
+  color: var(--text-dim);
+}
+
+.awards__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--shadow-sm);
+}
+
+.awards__title {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.awards__title h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.awards__crest {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.awards__blurb {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 52ch;
+}
+
+.awards__countdown {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.awards__countdown-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.awards__countdown-label {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.awards__error,
+.awards__blocker {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.awards__error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.awards__blocker {
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+
+.awards__panel {
+  padding: 22px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+}
+
+.awards__panel h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.awards__panel p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 62ch;
+}
+
+/* ---- timeline ---- */
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline__step {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  opacity: 0.6;
+}
+
+.timeline__step.is-done {
+  opacity: 1;
+}
+
+.timeline__step.is-now {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  background: var(--accent-soft);
+}
+
+.timeline__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.timeline__step.is-done .timeline__dot {
+  background: var(--gold);
+}
+
+.timeline__step.is-now .timeline__dot {
+  background: var(--accent);
+}
+
+.timeline__label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.timeline__date {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* ---- one category ---- */
+.awards__categories {
+  display: grid;
+  gap: 12px;
+}
+
+.award {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+}
+
+.award.is-picked {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.award__head {
+  display: flex;
+  gap: 14px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.award__name {
+  margin: 0;
+  font-size: 15px;
+}
+
+.award__blurb {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  max-width: 58ch;
+}
+
+.award__chosen {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  white-space: nowrap;
+}
+
+.award__choose {
+  justify-self: start;
+}
+
+.award__pick {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.award__pick-title {
+  flex: 1;
+  font-weight: 620;
+  font-size: 14px;
+}
+
+.award__pick-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.award__picker {
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+
+.award__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.award__options {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.award__option {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+}
+
+.award__option:hover {
+  background: var(--surface-3);
+}
+
+.award__option.is-on {
+  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
+  background: var(--accent-soft);
+}
+
+.award__option-text {
+  flex: 1;
+  display: grid;
+  gap: 1px;
+}
+
+.award__option-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.award__option-meta {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* ---- covers ---- */
+.awardcover {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex: none;
+}
+
+.awardcover--lg {
+  width: 84px;
+  height: 84px;
+  border-radius: var(--radius);
+}
+
+.awardcover--empty {
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: var(--text-faint);
+  background: var(--surface-3);
+}
+
+/* ---- the ceremony ---- */
+.ceremony {
+  display: grid;
+  gap: 14px;
+}
+
+.ceremony__award {
+  display: grid;
+  gap: 12px;
+  padding: 20px 22px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  /* Each envelope opens on its own, so it should arrive rather than appear. */
+  animation: award-in 420ms var(--ease) both;
+}
+
+@keyframes award-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ceremony__award {
+    animation: none;
+  }
+}
+
+.ceremony__name {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ceremony__winners {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.ceremony__next {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.winner {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+  padding: 18px 16px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+
+.winner--community {
+  border-color: color-mix(in srgb, var(--gold) 34%, transparent);
+  background: var(--gold-soft);
+}
+
+.winner__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.winner--community .winner__label {
+  color: var(--gold);
+}
+
+.winner--critics .winner__label {
+  color: var(--silver);
+}
+
+.winner__title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.winner__meta,
+.winner__empty {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ---- who picked what ---- */
+.ballotlog {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.ballotlog__body {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.ballotlog__heading {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.ballotlog__group ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.ballotlog__group strong {
+  color: var(--text);
+  margin-right: 6px;
+}
+
+/* ---- hall of fame ---- */
+.hall {
+  display: grid;
+  gap: 14px;
+  padding: 22px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+}
+
+.hall__title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.hall__season {
+  display: grid;
+  gap: 8px;
+}
+
+.hall__year {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+}
+
+.hall__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.hall__row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.hall__label {
+  flex: none;
+  width: 170px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.hall__winner {
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.hall__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+@media (max-width: 720px) {
+  .awards {
+    padding: 20px 24px 60px;
+  }
+
+  .timeline {
+    grid-template-columns: 1fr;
+  }
+
+  .hall__label {
+    width: 120px;
+  }
+}

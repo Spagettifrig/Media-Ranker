@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const catalog = require('./catalog.js');
 const supabase = require('./supabase.js');
+const awards = require('./awards.js');
 const { autoUpdater } = require('electron-updater');
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -597,6 +598,20 @@ function registerIpc() {
     }
   });
 
+  /**
+   * Fill in release years for items that predate the field. Failure is
+   * deliberately quiet: without a year an item simply stays out of the
+   * release-year award categories, which is not worth a toast on launch.
+   */
+  ipcMain.handle('catalog:releaseYears', async (_event, libraryKey, remoteIds) => {
+    try {
+      const years = await catalog.releaseYears(String(libraryKey ?? ''), remoteIds, credentials);
+      return { ok: true, years };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('catalog:import', async (_event, libraryKey, remoteId) => {
     try {
       const entry = await catalog.detail(String(libraryKey ?? ''), remoteId, credentials);
@@ -646,6 +661,17 @@ function registerIpc() {
     return result;
   });
 
+  /**
+   * Bulk push, for the one-time backfill after the awards upgrade. Logged
+   * rather than surfaced: it runs itself in the background and a failure
+   * just means the next launch tries again.
+   */
+  ipcMain.handle('sync:pushReviews', async (_event, libraryKey, items) => {
+    const result = await supabase.pushReviews(libraryKey, items);
+    if (!result.ok) console.error('[game-ranker] could not push reviews:', result.error);
+    return result;
+  });
+
   ipcMain.handle('sync:deleteReview', async (_event, id) => supabase.deleteReview(id));
 
   /**
@@ -673,6 +699,29 @@ function registerIpc() {
   ipcMain.handle('sync:fetchProfileReviews', async (_event, userId) =>
     supabase.fetchProfileReviews(userId),
   );
+
+  /* ---- awards ---------------------------------------------------------- */
+  ipcMain.handle('awards:season', async (_event, libraryKey) => awards.getSeason(libraryKey));
+
+  ipcMain.handle('awards:eligible', async (_event, seasonId, categoryKey) =>
+    awards.eligibleItems(seasonId, categoryKey),
+  );
+
+  ipcMain.handle('awards:myBallots', async (_event, seasonId) => awards.myBallots(seasonId));
+
+  ipcMain.handle('awards:cast', async (_event, payload) => awards.castBallot(payload ?? {}));
+
+  ipcMain.handle('awards:withdraw', async (_event, payload) => awards.withdrawBallot(payload ?? {}));
+
+  ipcMain.handle('awards:shortlist', async (_event, seasonId) => awards.shortlist(seasonId));
+
+  ipcMain.handle('awards:results', async (_event, seasonId) => awards.results(seasonId));
+
+  ipcMain.handle('awards:ballotLog', async (_event, seasonId) => awards.ballotLog(seasonId));
+
+  ipcMain.handle('awards:trophies', async () => awards.trophies());
+
+  ipcMain.handle('awards:history', async (_event, libraryKey) => awards.history(libraryKey));
 
   /* ---- auto-update ----------------------------------------------------- */
   ipcMain.handle('update:install', () => {

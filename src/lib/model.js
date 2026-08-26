@@ -60,6 +60,17 @@ function normalizeUpdatedAt(value) {
   return Number.isFinite(time) ? new Date(time).toISOString() : new Date().toISOString();
 }
 
+/**
+ * The catalog's release year, kept because Game of the Year is decided on it.
+ * It used to be fetched and thrown away; backfilling it later would mean
+ * re-querying IGDB for every item on every board, so it is stored on import.
+ */
+function normalizeReleaseYear(value) {
+  const year = Number(value);
+  if (!Number.isFinite(year)) return null;
+  return year >= 1950 && year <= 2200 ? Math.trunc(year) : null;
+}
+
 const PROVIDERS = new Set(['igdb', 'tmdb']);
 
 /** Which catalog resolved this item, if any - `null` for a manual (photo) import. */
@@ -91,6 +102,7 @@ export function createItem(
     provider = null,
     providerId = null,
     coverImageUrl = null,
+    releaseYear = null,
   } = {},
 ) {
   const config = libraryConfig(libraryKey);
@@ -110,8 +122,12 @@ export function createItem(
     descriptions: Object.fromEntries(config.descriptionFields.map((d) => [d.key, ''])),
     hoursPlayed: clampHours(hoursPlayed),
     firstPlayed: '',
+    releaseYear: normalizeReleaseYear(releaseYear),
     genres: normalizeTags(genres, config.genres),
     modes: normalizeTags(modes, config.modes),
+    // Which console you played it on. Multi-select, because playing Skyrim
+    // on both a 360 and a PC is the normal case, not the odd one.
+    platforms: [],
     addedAt: now,
     // Set only when the item came from a catalog search - see catalog.js /
     // App.jsx's addFromCatalog. A manual (photo) import leaves these null,
@@ -163,8 +179,10 @@ export function normalizeItem(libraryKey, raw, index) {
     descriptions,
     hoursPlayed: clampHours(raw?.hoursPlayed),
     firstPlayed: normalizeDate(raw?.firstPlayed),
+    releaseYear: normalizeReleaseYear(raw?.releaseYear),
     genres: normalizeTags(raw?.genres, config.genres),
     modes: normalizeTags(raw?.modes, config.modes),
+    platforms: normalizeTags(raw?.platforms, config.platforms ?? []),
     // Items saved before "date added" existed keep a null stamp; sorting falls
     // back to board order for those, which is the closest honest answer.
     addedAt: normalizeAddedAt(raw?.addedAt),
@@ -183,7 +201,10 @@ export function normalizeItem(libraryKey, raw, index) {
 /**
  * A cloud review row (already cover-downloaded by the main process) as a local
  * item. Only the fields the cloud actually stores come back: board position,
- * gallery images and the "first played" date are per-device and start empty.
+ * gallery images and which console you played it on are per-device and start
+ * empty. "First played" is *not* in that list any more - awards eligibility is
+ * decided on it, so it has to be the same date on every machine and on the
+ * server.
  */
 export function itemFromReview(libraryKey, review, index = 0) {
   return normalizeItem(
@@ -194,10 +215,13 @@ export function itemFromReview(libraryKey, review, index = 0) {
       mainImage: review.file ?? null,
       galleryImages: [],
       categoryScores: review.categoryScores,
+      disabledCategories: review.disabledCategories,
       descriptions: review.descriptions,
       genres: review.genres,
       modes: review.modes,
       hoursPlayed: review.hoursPlayed,
+      firstPlayed: review.firstPlayed,
+      releaseYear: review.releaseYear,
       addedAt: review.addedAt,
       provider: review.provider,
       providerId: review.providerId,

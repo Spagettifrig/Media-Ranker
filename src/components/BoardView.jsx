@@ -18,8 +18,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import ContextMenu from './ContextMenu.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
+import TrophyBadge from './TrophyBadge.jsx';
 import { ordinal } from '../lib/score.js';
 import { genreLabels } from '../lib/media.js';
+import { trophiesFor } from '../lib/awards.js';
 
 /**
  * The ranking grid.
@@ -31,6 +33,7 @@ import { genreLabels } from '../lib/media.js';
 export default function BoardView({
   items,
   config,
+  trophies,
   reorderable,
   importing,
   filtered,
@@ -227,6 +230,7 @@ export default function BoardView({
     const shared = {
       item,
       config,
+      trophies,
       position: index + 1,
       isMenuTarget: menu?.id === item.id,
       isSelected: selectedId === item.id,
@@ -292,7 +296,12 @@ export default function BoardView({
         <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
           {activeItem ? (
             <div className="card card--overlay">
-              <CardBody item={activeItem} config={config} position={activePosition} />
+              <CardBody
+                item={activeItem}
+                config={config}
+                trophies={trophies}
+                position={activePosition}
+              />
             </div>
           ) : null}
         </DragOverlay>
@@ -325,6 +334,7 @@ function cardLabel(item, position) {
 function SortableCard({
   item,
   config,
+  trophies,
   position,
   isMenuTarget,
   isSelected,
@@ -377,7 +387,7 @@ function SortableCard({
       onContextMenu={onContextMenu}
       aria-label={cardLabel(item, position)}
     >
-      <CardBody item={item} config={config} position={position} />
+      <CardBody item={item} config={config} trophies={trophies} position={position} />
     </li>
   );
 }
@@ -386,6 +396,7 @@ function SortableCard({
 function StaticCard({
   item,
   config,
+  trophies,
   position,
   isMenuTarget,
   isSelected,
@@ -410,14 +421,15 @@ function StaticCard({
       }}
       aria-label={cardLabel(item, position)}
     >
-      <CardBody item={item} config={config} position={position} />
+      <CardBody item={item} config={config} trophies={trophies} position={position} />
     </li>
   );
 }
 
-function CardBody({ item, config, position }) {
+function CardBody({ item, config, trophies, position }) {
   const src = item.mainImage ? window.api.imageUrl(item.mainImage) : null;
   const genres = genreLabels(config, item.genres);
+  const won = trophiesFor(trophies, item);
 
   return (
     <>
@@ -430,6 +442,11 @@ function CardBody({ item, config, position }) {
           </div>
         )}
         <span className="card__position">{ordinal(position)}</span>
+        {won.length > 0 ? (
+          <span className="card__trophies">
+            <TrophyBadge trophies={won} />
+          </span>
+        ) : null}
       </div>
       <div className="card__meta">
         <ScoreBadge value={item.overallScore} />

@@ -165,6 +165,27 @@ function fromTmdb(movie) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Release-year backfill
+ *
+ * Release year only started being stored when the awards needed it, so every
+ * item added before that has none - and Game of the Year is decided on it.
+ * These fill the gap in bulk for things that already carry a catalog id.
+ * ------------------------------------------------------------------ */
+
+/** IGDB's own ceiling on `limit` is 500; 200 keeps the query string sane. */
+const IGDB_YEAR_CHUNK = 200;
+/** TMDB is one request per film, so this is a politeness limit, not a batch size. */
+const TMDB_YEAR_CONCURRENCY = 4;
+/** Nothing is backfilled beyond this in one pass, so a huge board cannot stall a launch. */
+const YEAR_BACKFILL_CAP = 400;
+
+function chunked(values, size) {
+  const out = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
+}
+
+/* ------------------------------------------------------------------ *
  * Providers, keyed by library
  * ------------------------------------------------------------------ */
 const PROVIDERS = {
@@ -186,6 +207,24 @@ const PROVIDERS = {
       const [game] = await igdbQuery(credentials, `where id = ${id}; ${IGDB_FIELDS} limit 1;`);
       return game ? fromIgdb(game) : null;
     },
+    // Apicalypse takes an id list, so a whole board's worth of missing years
+    // costs a handful of requests rather than one per game.
+    async years(credentials, remoteIds) {
+      const found = {};
+      for (const chunk of chunked(remoteIds, IGDB_YEAR_CHUNK)) {
+        const rows = await igdbQuery(
+          credentials,
+          `fields id,first_release_date; where id = (${chunk.join(',')}); limit ${IGDB_YEAR_CHUNK};`,
+        );
+        for (const row of rows) {
+          const released = Number(row?.first_release_date);
+          if (Number.isFinite(released)) {
+            found[String(row.id)] = new Date(released * 1000).getUTCFullYear();
+          }
+        }
+      }
+      return found;
+    },
   },
 
   movies: {
@@ -205,6 +244,25 @@ const PROVIDERS = {
       // The search payload has no runtime, so the detail endpoint is a real
       // second call rather than something we could have cached from the list.
       return fromTmdb(await tmdbGet(credentials, `/movie/${id}`, {}));
+    },
+    // TMDB has no batch endpoint, so this really is one request per film -
+    // run a few at a time and let a single failure drop that one film rather
+    // than the whole backfill.
+    async years(credentials, remoteIds) {
+      const found = {};
+      for (const chunk of chunked(remoteIds, TMDB_YEAR_CONCURRENCY)) {
+        const settled = await Promise.allSettled(
+          chunk.map((id) => tmdbGet(credentials, `/movie/${id}`, {})),
+        );
+        settled.forEach((outcome, index) => {
+          if (outcome.status !== 'fulfilled') return;
+          const release = outcome.value?.release_date;
+          if (typeof release === 'string' && /^\d{4}/.test(release)) {
+            found[String(chunk[index])] = Number(release.slice(0, 4));
+          }
+        });
+      }
+      return found;
     },
   },
 };
@@ -252,4 +310,21 @@ async function detail(libraryKey, remoteId, credentials) {
   return entry ? { ...entry, provider: provider.id } : entry;
 }
 
-module.exports = { search, detail, status };
+/**
+ * Release years for a batch of catalog ids, as { remoteId: year }. Anything
+ * the provider has no answer for is simply absent - a missing year is not an
+ * error, it just means that item stays out of the release-year categories.
+ */
+async function releaseYears(libraryKey, remoteIds, credentials) {
+  const provider = PROVIDERS[libraryKey];
+  if (!provider?.years) return {};
+  if (missing(libraryKey, credentials).length > 0) return {};
+
+  const ids = [...new Set((remoteIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))]
+    .slice(0, YEAR_BACKFILL_CAP);
+  if (ids.length === 0) return {};
+
+  return provider.years(credentials, ids);
+}
+
+module.exports = { search, detail, status, releaseYears };

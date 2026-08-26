@@ -17,6 +17,7 @@ export const DEFAULT_FILTERS = {
   query: '',
   genres: [],
   modes: [],
+  platforms: [],
   sort: 'rank',
 };
 
@@ -39,14 +40,29 @@ function matchesTags(itemTags, selected) {
   return selected.every((key) => owned.has(key));
 }
 
+/**
+ * Platforms are the one filter that ORs instead of ANDing. Picking PS2 and PC
+ * asks for "the games I played on either", not "the handful I played on both" -
+ * ANDing them would answer a question nobody has.
+ */
+function matchesAnyTag(itemTags, selected) {
+  if (selected.length === 0) return true;
+  const owned = new Set(itemTags ?? []);
+  return selected.some((key) => owned.has(key));
+}
+
 export function filterItems(items, filters) {
   const needle = filters.query.trim().toLowerCase();
-  if (!needle && filters.genres.length === 0 && filters.modes.length === 0) return items;
+  const platforms = filters.platforms ?? [];
+  if (!needle && filters.genres.length === 0 && filters.modes.length === 0 && platforms.length === 0) {
+    return items;
+  }
   return items.filter(
     (item) =>
       matchesQuery(item, needle) &&
       matchesTags(item.genres, filters.genres) &&
-      matchesTags(item.modes, filters.modes),
+      matchesTags(item.modes, filters.modes) &&
+      matchesAnyTag(item.platforms, platforms),
   );
 }
 
@@ -81,7 +97,12 @@ export function visibleItems(items, filters) {
 }
 
 export function isFiltered(filters) {
-  return Boolean(filters.query.trim()) || filters.genres.length > 0 || filters.modes.length > 0;
+  return (
+    Boolean(filters.query.trim()) ||
+    filters.genres.length > 0 ||
+    filters.modes.length > 0 ||
+    (filters.platforms ?? []).length > 0
+  );
 }
 
 /**
@@ -101,5 +122,11 @@ export function describeFilters(config, filters) {
   if (genreLabels.length > 0) parts.push(genreLabels.join(' + '));
   const modeLabels = config.modes.filter((m) => filters.modes.includes(m.key)).map((m) => m.label);
   if (modeLabels.length > 0) parts.push(modeLabels.join(' + '));
+  const platformLabels = (config.platforms ?? [])
+    .filter((p) => (filters.platforms ?? []).includes(p.key))
+    .map((p) => p.label);
+  // " or ", not " + " - platforms are the ORed filter, and the export image
+  // caption has to read the way the list actually behaves.
+  if (platformLabels.length > 0) parts.push(platformLabels.join(' or '));
   return parts.join(' · ');
 }

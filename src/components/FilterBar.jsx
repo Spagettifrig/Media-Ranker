@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import TagChips from './TagChips.jsx';
 import { SORTS, isFiltered, isReorderable } from '../lib/collection.js';
+import { hasPlatforms, platformGroups } from '../lib/media.js';
 import { EXPORT_FORMATS } from '../lib/export-image.js';
 
 /**
@@ -19,14 +20,15 @@ export default function FilterBar({
 }) {
   const filtered = isFiltered(filters);
   const [open, setOpen] = useState(false);
-  const tagCount = filters.genres.length + filters.modes.length;
+  const platforms = filters.platforms ?? [];
+  const tagCount = filters.genres.length + filters.modes.length + platforms.length;
 
   function patch(next) {
     onChange({ ...filters, ...next });
   }
 
   function toggle(field, key) {
-    const current = filters[field];
+    const current = filters[field] ?? [];
     patch({
       [field]: current.includes(key) ? current.filter((k) => k !== key) : [...current, key],
     });
@@ -118,11 +120,35 @@ export default function FilterBar({
             />
           </div>
 
+          {/* Narrowing to one console is how you get a per-console ranking:
+              the board renumbers what it shows, so filtering to PS2 gives you
+              your PS2 top ten in the order you already put them in. Several
+              consoles at once ORs rather than ANDs - "PS2 or PC", not the
+              handful of games you happened to own on both. */}
+          {hasPlatforms(config) ? (
+            <div className="filters__group filters__group--wide">
+              <span className="filters__label">{config.platformsLabel}</span>
+              <div className="platforms">
+                {platformGroups(config).map((group) => (
+                  <div key={group.label} className="platforms__group">
+                    <span className="platforms__family">{group.label}</span>
+                    <TagChips
+                      tags={group.platforms}
+                      selected={platforms}
+                      onToggle={(key) => toggle('platforms', key)}
+                      ariaLabel={`Filter by ${group.label} platform`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {tagCount > 0 ? (
             <button
               type="button"
               className="btn btn--ghost btn--sm filters__clear"
-              onClick={() => patch({ genres: [], modes: [] })}
+              onClick={() => patch({ genres: [], modes: [], platforms: [] })}
             >
               Clear filters
             </button>

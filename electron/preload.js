@@ -67,6 +67,14 @@ contextBridge.exposeInMainWorld('api', {
   importFromCatalog: (libraryKey, remoteId) =>
     ipcRenderer.invoke('catalog:import', libraryKey, remoteId),
 
+  /**
+   * Release years for catalog ids already on the board, as { remoteId: year }.
+   * Backfills the field for items added before it existed - without it they
+   * can never be nominated for Game of the Year.
+   */
+  catalogReleaseYears: (libraryKey, remoteIds) =>
+    ipcRenderer.invoke('catalog:releaseYears', libraryKey, remoteIds),
+
   /** Build a renderer-safe URL for a stored image file name. */
   imageUrl: (name) => (name ? `gameimg://img/${encodeURIComponent(name)}` : null),
 
@@ -99,6 +107,9 @@ contextBridge.exposeInMainWorld('api', {
   /** Upserts one item to the cloud as a review. No-ops server-side if it has no catalog identity. */
   pushReview: (libraryKey, item) => ipcRenderer.invoke('sync:pushReview', libraryKey, item),
 
+  /** Upserts a whole library in bulk. Used once after the awards upgrade, never on a normal edit. */
+  pushReviews: (libraryKey, items) => ipcRenderer.invoke('sync:pushReviews', libraryKey, items),
+
   /** Soft-deletes a pushed review so it drops out of everyone's feed. */
   deleteReview: (id) => ipcRenderer.invoke('sync:deleteReview', id),
 
@@ -111,6 +122,43 @@ contextBridge.exposeInMainWorld('api', {
 
   /** One user's visible-to-you reviews. Resolves to { ok, displayName, reviews } or { ok: false, error }. */
   fetchProfileReviews: (userId) => ipcRenderer.invoke('sync:fetchProfileReviews', userId),
+
+  /* ---- awards ---------------------------------------------------------
+   * Every one of these is an RPC into a SECURITY DEFINER function. None of
+   * them can be talked into skipping a rule by a renderer that lies, which
+   * is the whole reason the awards go through functions and not tables.
+   * ------------------------------------------------------------------- */
+
+  /** The season, its phase, and how this user stands against the entry rules. */
+  awardSeason: (libraryKey) => ipcRenderer.invoke('awards:season', libraryKey),
+
+  /** What this user is allowed to put forward in one category. */
+  awardEligible: (seasonId, categoryKey) =>
+    ipcRenderer.invoke('awards:eligible', seasonId, categoryKey),
+
+  /** This user's own ballots. The only tally readable before the reveal. */
+  awardMyBallots: (seasonId) => ipcRenderer.invoke('awards:myBallots', seasonId),
+
+  /** Nominate or vote. Resolves to { ok } or { ok: false, error } with the server's reason. */
+  awardCast: (payload) => ipcRenderer.invoke('awards:cast', payload),
+
+  /** Take a pick back. Allowed right up to that round's deadline. */
+  awardWithdraw: (payload) => ipcRenderer.invoke('awards:withdraw', payload),
+
+  /** The nominees, once voting has opened. */
+  awardShortlist: (seasonId) => ipcRenderer.invoke('awards:shortlist', seasonId),
+
+  /** The winners, once the reveal instant has passed. Computes them if nobody has yet. */
+  awardResults: (seasonId) => ipcRenderer.invoke('awards:results', seasonId),
+
+  /** Who nominated and voted for what. Unsealed with the results. */
+  awardBallotLog: (seasonId) => ipcRenderer.invoke('awards:ballotLog', seasonId),
+
+  /** Every win ever, for stamping trophies onto boards. */
+  awardTrophies: () => ipcRenderer.invoke('awards:trophies'),
+
+  /** Every finished season, newest first - the Hall of Fame. */
+  awardHistory: (libraryKey) => ipcRenderer.invoke('awards:history', libraryKey),
 
   /** Fires once a background-downloaded update is ready to install. */
   onUpdateStatus: (callback) => {

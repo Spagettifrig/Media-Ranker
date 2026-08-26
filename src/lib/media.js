@@ -30,6 +30,36 @@ function genres(...labels) {
   }));
 }
 
+/**
+ * Where you played it, which is a fact about *you* and not about the game -
+ * IGDB knows a game shipped on five platforms, it cannot know which one you
+ * put the hours into. So this is hand-picked, multi-select, and grouped only
+ * for the sake of the picker.
+ */
+const GAME_PLATFORMS = [
+  { key: 'pc', label: 'PC', group: 'PC' },
+  { key: 'ps1', label: 'PlayStation', group: 'PlayStation' },
+  { key: 'ps2', label: 'PlayStation 2', group: 'PlayStation' },
+  { key: 'ps3', label: 'PlayStation 3', group: 'PlayStation' },
+  { key: 'ps4', label: 'PlayStation 4', group: 'PlayStation' },
+  { key: 'ps5', label: 'PlayStation 5', group: 'PlayStation' },
+  { key: 'psp', label: 'PSP / Vita', group: 'PlayStation' },
+  { key: 'xbox', label: 'Xbox', group: 'Xbox' },
+  { key: 'xbox360', label: 'Xbox 360', group: 'Xbox' },
+  { key: 'xboxone', label: 'Xbox One', group: 'Xbox' },
+  { key: 'xboxseries', label: 'Xbox Series X|S', group: 'Xbox' },
+  { key: 'n64', label: 'Nintendo 64', group: 'Nintendo' },
+  { key: 'gamecube', label: 'GameCube', group: 'Nintendo' },
+  { key: 'wii', label: 'Wii', group: 'Nintendo' },
+  { key: 'wiiu', label: 'Wii U', group: 'Nintendo' },
+  { key: 'switch', label: 'Switch', group: 'Nintendo' },
+  { key: 'switch2', label: 'Switch 2', group: 'Nintendo' },
+  { key: 'ds', label: 'DS / 3DS', group: 'Nintendo' },
+  { key: 'gameboy', label: 'Game Boy', group: 'Nintendo' },
+  { key: 'mobile', label: 'Mobile', group: 'Other' },
+  { key: 'other', label: 'Other', group: 'Other' },
+];
+
 /* ------------------------------------------------------------------ *
  * Online catalog vocabulary
  *
@@ -133,6 +163,8 @@ export const LIBRARIES = [
       { key: 'multiplayer', label: 'Multiplayer' },
     ],
     modesLabel: 'Players',
+    platforms: GAME_PLATFORMS,
+    platformsLabel: 'Played on',
     hours: {
       label: 'Hours played',
       unit: 'hours',
@@ -196,6 +228,10 @@ export const LIBRARIES = [
       { key: 'animated', label: 'Animated' },
     ],
     modesLabel: 'Format',
+    // "Which console" has no sensible answer for a film, so every platform
+    // control in the app keys off this being empty and simply disappears.
+    platforms: [],
+    platformsLabel: 'Watched on',
     hours: {
       label: 'Runtime',
       unit: 'hours',
@@ -253,4 +289,24 @@ export function genreLabels(config, keys) {
 export function modeLabels(config, keys) {
   const labels = new Map(config.modes.map((mode) => [mode.key, mode.label]));
   return (keys ?? []).map((key) => labels.get(key)).filter(Boolean);
+}
+
+export function platformLabels(config, keys) {
+  const labels = new Map((config.platforms ?? []).map((p) => [p.key, p.label]));
+  return (keys ?? []).map((key) => labels.get(key)).filter(Boolean);
+}
+
+/** Whether this library has platforms at all - false for movies. */
+export function hasPlatforms(config) {
+  return (config.platforms ?? []).length > 0;
+}
+
+/** The picker groups by console family; this keeps that order stable. */
+export function platformGroups(config) {
+  const groups = new Map();
+  for (const platform of config.platforms ?? []) {
+    if (!groups.has(platform.group)) groups.set(platform.group, []);
+    groups.get(platform.group).push(platform);
+  }
+  return [...groups].map(([label, platforms]) => ({ label, platforms }));
 }

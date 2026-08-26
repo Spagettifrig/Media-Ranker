@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AddFromCatalog from './components/AddFromCatalog.jsx';
+import AwardsView from './components/AwardsView.jsx';
 import BoardView from './components/BoardView.jsx';
 import CompareView from './components/CompareView.jsx';
 import DetailView from './components/DetailView.jsx';
@@ -21,6 +22,7 @@ import {
   withRanks,
 } from './lib/model.js';
 import { clampScore, computeOverall } from './lib/score.js';
+import { trophyIndex } from './lib/awards.js';
 import { DEFAULT_LIBRARY, LIBRARIES, libraryConfig } from './lib/media.js';
 import {
   DEFAULT_FILTERS,
@@ -36,15 +38,26 @@ const AUTOSAVE_DELAY_MS = 200;
 const REVIEW_PUSH_DELAY_MS = 600;
 const TOAST_MS = 6000;
 
+/**
+ * Bumped whenever a new `reviews` column needs the existing cloud rows
+ * rewritten. Stored in settings; a lower stamp triggers one bulk re-push.
+ */
+const AWARDS_SYNC_VERSION = 1;
+
 /** Catalog credentials. Persisted alongside the other settings, never bundled. */
 const CREDENTIAL_KEYS = ['tmdbToken', 'twitchClientId', 'twitchClientSecret'];
 
 const emptyCredentials = () => Object.fromEntries(CREDENTIAL_KEYS.map((key) => [key, '']));
 
 /** Credentials sit flat in `settings` next to theme and cover aspect. */
-const settingsPayload = ({ theme, coverAspect, credentials }) => ({
+const settingsPayload = ({ theme, coverAspect, credentials, trophies, awardsSync }) => ({
   theme,
   coverAspect,
+  awardsSync,
+  // Cached so a board still shows its trophies on an offline launch. Awards
+  // results never change once published, so a stale cache is only ever
+  // missing the newest season, never wrong about an old one.
+  trophies,
   ...credentials,
 });
 
@@ -55,6 +68,12 @@ const emptyLibraries = () => Object.fromEntries(LIBRARIES.map((library) => [libr
  * Local wins ties, and keeps the things the cloud has no opinion about -
  * imported images, gallery order, board position - so a pull can never wipe
  * artwork off a board it didn't put there.
+ *
+ * `firstPlayed` used to be in that list of per-device fields. It isn't any
+ * more: awards eligibility is decided on that date, so it has to be one date
+ * per item per account, the same everywhere, and the newer edit has to win
+ * like every other synced field. Which console you played it on takes its
+ * place as the local-only one - that genuinely is per-device.
  */
 function mergeCloudItems(localItems, cloudItems) {
   const cloudById = new Map(cloudItems.map((item) => [item.id, item]));
@@ -67,7 +86,7 @@ function mergeCloudItems(localItems, cloudItems) {
       ...cloud,
       mainImage: item.mainImage ?? cloud.mainImage,
       galleryImages: item.galleryImages,
-      firstPlayed: item.firstPlayed,
+      platforms: item.platforms,
       rank: item.rank,
     };
   });
@@ -91,6 +110,8 @@ export default function App() {
   const [theme, setTheme] = useState('dark');
   const [coverAspect, setCoverAspect] = useState(DEFAULT_COVER_ASPECT);
   const [credentials, setCredentials] = useState(emptyCredentials);
+  const [trophies, setTrophies] = useState([]);
+  const [awardsSync, setAwardsSync] = useState(AWARDS_SYNC_VERSION);
   const [ready, setReady] = useState(false);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -106,8 +127,8 @@ export default function App() {
   const pendingReviewPushes = useRef(new Set());
 
   const searchRef = useRef(null);
-  const latest = useRef({ libraries, theme, coverAspect, credentials });
-  latest.current = { libraries, theme, coverAspect, credentials };
+  const latest = useRef({ libraries, theme, coverAspect, credentials, trophies, awardsSync });
+  latest.current = { libraries, theme, coverAspect, credentials, trophies, awardsSync };
 
   /** Whose library is currently in `libraries` - every save has to name it. */
   const accountId = user?.id ?? null;
@@ -182,6 +203,105 @@ export default function App() {
     };
   }, [user]);
 
+  /**
+   * One-time full re-push after the awards upgrade.
+   *
+   * `first_played` never used to leave the device, so every row already in
+   * the cloud has it null - and six of the nine game categories are decided
+   * on it. Pushes only ever happen when an item is *edited*, so without this
+   * an untouched library would be almost entirely un-nominatable, and the
+   * awards tab would look broken rather than empty.
+   *
+   * Guarded by a stamp in settings so it runs once per account and never
+   * again. Bump `AWARDS_SYNC_VERSION` if a future column needs the same
+   * treatment.
+   */
+  const rePushed = useRef(new Set());
+  useEffect(() => {
+    if (!ready || !user) return;
+    if (awardsSync >= AWARDS_SYNC_VERSION) return;
+    const key = accountId ?? 'local';
+    if (rePushed.current.has(key)) return;
+    rePushed.current.add(key);
+
+    (async () => {
+      for (const entry of LIBRARIES) {
+        const items = latest.current.libraries[entry.key] ?? [];
+        const catalogued = items.filter((item) => item.provider && item.providerId);
+        if (catalogued.length === 0) continue;
+        const response = await window.api.pushReviews(entry.key, catalogued);
+        // Leave the stamp unset on failure so the next launch tries again.
+        if (!response?.ok) return;
+      }
+      setAwardsSync(AWARDS_SYNC_VERSION);
+    })();
+  }, [ready, user, accountId, awardsSync]);
+
+  /**
+   * Backfill release years, once per library per session.
+   *
+   * Release year only started being stored when the awards needed it, so
+   * everything added before that has none - and Game of the Year is decided
+   * on it. Without this pass the category would simply be empty for every
+   * item anyone already owns.
+   *
+   * Quiet by design: no toast, no spinner, and a failure just leaves the
+   * years missing so the next launch can try again. It also skips items with
+   * no catalog identity, which can never have a year to look up.
+   */
+  const backfilledYears = useRef(new Set());
+  useEffect(() => {
+    if (!ready) return;
+    const key = `${accountId ?? 'local'}:${library}`;
+    if (backfilledYears.current.has(key)) return;
+
+    const pending = (latest.current.libraries[library] ?? []).filter(
+      (item) => item.provider && item.providerId && item.releaseYear === null,
+    );
+    if (pending.length === 0) return;
+    backfilledYears.current.add(key);
+
+    (async () => {
+      const response = await window.api.catalogReleaseYears(
+        library,
+        pending.map((item) => item.providerId),
+      );
+      if (!response?.ok) return;
+      const years = response.years ?? {};
+      if (Object.keys(years).length === 0) return;
+      setLibraries((prev) => ({
+        ...prev,
+        [library]: (prev[library] ?? []).map((item) => {
+          const year = item.providerId ? years[String(item.providerId)] : undefined;
+          if (item.releaseYear !== null || year === undefined) return item;
+          // Stamped as an edit so the push sync carries the year up to the
+          // cloud, where eligibility is actually checked.
+          pendingReviewPushes.current.add(item.id);
+          return { ...item, releaseYear: year, updatedAt: new Date().toISOString() };
+        }),
+      }));
+    })();
+  }, [ready, library, accountId]);
+
+  /**
+   * Trophies are a community fact, not a personal one, so they are fetched
+   * whole and matched onto the board by catalog identity - everyone who owns
+   * a winner sees the same mark on it. Refreshed on sign-in and left cached
+   * on disk in between, because an offline launch should still show them.
+   */
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    window.api.awardTrophies().then((response) => {
+      if (!cancelled && response?.ok) setTrophies(response.trophies);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const trophiesByItem = useMemo(() => trophyIndex(trophies), [trophies]);
+
   const updateDefaultVisibility = useCallback(async (value) => {
     setProfile((prev) => (prev ? { ...prev, defaultVisibility: value } : prev));
     const response = await window.api.updateProfile(value);
@@ -245,6 +365,10 @@ export default function App() {
         if (typeof value === 'string') loadedCredentials[key] = value;
       }
       setCredentials(loadedCredentials);
+      setTrophies(Array.isArray(saved?.settings?.trophies) ? saved.settings.trophies : []);
+      // Absent on any file written before the awards existed, which is
+      // exactly the case that needs the one-time re-push.
+      setAwardsSync(Number(saved?.settings?.awardsSync) || 0);
 
       loadedAccount.current = accountId;
       setLibraries(loaded);
@@ -278,7 +402,7 @@ export default function App() {
       setSaveState('saved');
     }, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [libraries, theme, coverAspect, credentials, ready]);
+  }, [libraries, theme, coverAspect, credentials, trophies, awardsSync, ready]);
 
   // Flush if focus is lost inside the debounce window.
   useEffect(() => {
@@ -432,6 +556,14 @@ export default function App() {
     [patchItem, config],
   );
 
+  const togglePlatform = useCallback(
+    (id, key) =>
+      patchItem(id, (item) => ({
+        platforms: toggleTag(item.platforms, key, config.platforms ?? []),
+      })),
+    [patchItem, config],
+  );
+
   const setVisibility = useCallback(
     (id, value) => patchItem(id, () => ({ visibility: value })),
     [patchItem],
@@ -493,6 +625,11 @@ export default function App() {
         provider: entry.provider,
         providerId: entry.remoteId,
         coverImageUrl: entry.imageUrl,
+        // Game of the Year is decided on this, so it is stored at import time.
+        // Fetching it later would mean re-querying the catalog for every item
+        // on every board, which is why it is captured on the one pass that
+        // already has it in hand.
+        releaseYear: entry.year,
       });
 
       patchLibrary((list) => withRanks([...list, created]));
@@ -820,6 +957,8 @@ export default function App() {
             onFirstPlayedChange={(value) => setFirstPlayed(openItem.id, value)}
             onToggleGenre={(key) => toggleGenre(openItem.id, key)}
             onToggleMode={(key) => toggleMode(openItem.id, key)}
+            onTogglePlatform={(key) => togglePlatform(openItem.id, key)}
+            trophies={trophiesByItem}
             user={user}
             onVisibilityChange={(value) => setVisibility(openItem.id, value)}
             onOpenProfile={setProfileTarget}
@@ -829,16 +968,19 @@ export default function App() {
     );
   }
 
+  const counted = `${items.length} ${items.length === 1 ? config.item : config.items} ranked`;
   const subtitle =
     state.view === 'stats'
       ? 'How your rankings break down'
-      : state.view === 'compare'
-        ? `Put two ${config.items} side by side`
-        : items.length === 0
-          ? 'Nothing ranked yet'
-          : reorderable
-            ? `${items.length} ${items.length === 1 ? config.item : config.items} ranked · drag to reorder · right-click for options`
-            : `${items.length} ${items.length === 1 ? config.item : config.items} ranked · right-click for options`;
+      : state.view === 'awards'
+        ? 'Nominate, vote, and see what won'
+        : state.view === 'compare'
+          ? `Put two ${config.items} side by side`
+          : items.length === 0
+            ? 'Nothing ranked yet'
+            : reorderable
+              ? `${counted} · drag to reorder · right-click for options`
+              : `${counted} · right-click for options`;
 
   return (
     <div className="app">
@@ -870,6 +1012,7 @@ export default function App() {
             <BoardView
               items={shown}
               config={config}
+              trophies={trophiesByItem}
               reorderable={reorderable}
               filtered={filtered}
               importing={importing}
@@ -897,6 +1040,10 @@ export default function App() {
             onSwap={swapCompare}
             onOpen={setOpenId}
           />
+        ) : null}
+
+        {state.view === 'awards' ? (
+          <AwardsView config={config} items={items} user={user} libraryKey={library} />
         ) : null}
       </main>
     </div>
