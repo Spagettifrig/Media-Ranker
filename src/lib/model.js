@@ -71,7 +71,9 @@ function normalizeReleaseYear(value) {
   return year >= 1950 && year <= 2200 ? Math.trunc(year) : null;
 }
 
-const PROVIDERS = new Set(['igdb', 'tmdb']);
+// `tmdb_tv` is separate from `tmdb` on purpose - see the note on the `series`
+// provider in electron/catalog.js. Films and shows share id numbers.
+const PROVIDERS = new Set(['igdb', 'tmdb', 'tmdb_tv']);
 
 /** Which catalog resolved this item, if any - `null` for a manual (photo) import. */
 function normalizeProvider(value) {

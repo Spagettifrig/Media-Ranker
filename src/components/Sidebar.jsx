@@ -35,7 +35,7 @@ export default function Sidebar({ library, counts, onLibraryChange, onOpenSettin
               title={`${item.label} (Alt+${index + 1})`}
             >
               <span className="sidebar__icon" aria-hidden="true">
-                {item.key === 'movies' ? <FilmIcon /> : <ControllerIcon />}
+                <LibraryIcon libraryKey={item.key} />
               </span>
               <span className="sidebar__label">{item.label}</span>
               <span className="sidebar__count">{counts[item.key] ?? 0}</span>
@@ -73,6 +73,13 @@ export default function Sidebar({ library, counts, onLibraryChange, onOpenSettin
   );
 }
 
+/** One icon per library. An unknown key falls back to the controller. */
+function LibraryIcon({ libraryKey }) {
+  if (libraryKey === 'movies') return <FilmIcon />;
+  if (libraryKey === 'series') return <TvIcon />;
+  return <ControllerIcon />;
+}
+
 function RankIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -104,6 +111,21 @@ function FilmIcon() {
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="3" y="4.5" width="18" height="15" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
       <path d="M8 4.5v15M16 4.5v15M3 9.5h5M3 14.5h5M16 9.5h5M16 14.5h5" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function TvIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="7.5" width="19" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="m8 3.5 4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

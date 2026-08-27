@@ -164,6 +164,42 @@ function fromTmdb(movie) {
   };
 }
 
+/**
+ * TMDB's television payload is the same idea under different field names -
+ * `name` not `title`, `first_air_date` not `release_date` - so it needs its
+ * own mapper rather than a few `??`s bolted onto `fromTmdb`.
+ */
+function fromTmdbTv(show) {
+  const firstAir = typeof show.first_air_date === 'string' ? show.first_air_date : '';
+  // A show has no single runtime; what is actually comparable between shows is
+  // how long the whole thing takes to watch. Episode runtimes vary (specials,
+  // double-length finales), so this averages them - and both fields are absent
+  // from search results, which is why it stays null until the detail fetch.
+  const runtimes = (show.episode_run_time ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  const episodes = Number(show.number_of_episodes);
+  const avgRuntime = runtimes.length > 0 ? runtimes.reduce((a, b) => a + b, 0) / runtimes.length : 0;
+  const totalHours =
+    avgRuntime > 0 && Number.isFinite(episodes) && episodes > 0
+      ? Math.round(((episodes * avgRuntime) / 60) * 10) / 10
+      : null;
+
+  return {
+    remoteId: String(show.id),
+    title: show.name || show.original_name || 'Untitled',
+    // The year it *started*, which is what a series is filed under and what
+    // Series of the Year has to be decided on - a ten-year run cannot be
+    // eligible in all ten.
+    year: /^\d{4}/.test(firstAir) ? Number(firstAir.slice(0, 4)) : null,
+    thumbUrl: tmdbImage(show.poster_path, 'w185'),
+    imageUrl: tmdbImage(show.poster_path, 'w500'),
+    summary: typeof show.overview === 'string' ? show.overview : '',
+    genreIds: Array.isArray(show.genre_ids)
+      ? show.genre_ids
+      : (show.genres ?? []).map((genre) => genre?.id).filter(Number.isFinite),
+    hours: totalHours,
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * Release-year backfill
  *
@@ -259,6 +295,47 @@ const PROVIDERS = {
           const release = outcome.value?.release_date;
           if (typeof release === 'string' && /^\d{4}/.test(release)) {
             found[String(chunk[index])] = Number(release.slice(0, 4));
+          }
+        });
+      }
+      return found;
+    },
+  },
+
+  series: {
+    // Deliberately *not* 'tmdb'. Films and shows are separate id namespaces at
+    // TMDB - movie 1399 and series 1399 are unrelated things - and the social
+    // feed joins other users' reviews on (provider, provider_id) alone. Sharing
+    // the tag would cross-match a film with a show that happened to draw the
+    // same number, and hang its trophies on the wrong poster.
+    id: 'tmdb_tv',
+    label: 'TMDB',
+    requires: ['tmdbToken'],
+    async search(credentials, query) {
+      const data = await tmdbGet(credentials, '/search/tv', {
+        query,
+        include_adult: 'false',
+      });
+      return (data?.results ?? []).map(fromTmdbTv);
+    },
+    async detail(credentials, remoteId) {
+      const id = Number(remoteId);
+      if (!Number.isInteger(id) || id <= 0) return null;
+      // Search carries neither the episode count nor the per-episode runtime,
+      // so the watch-time total genuinely needs this second call.
+      return fromTmdbTv(await tmdbGet(credentials, `/tv/${id}`, {}));
+    },
+    async years(credentials, remoteIds) {
+      const found = {};
+      for (const chunk of chunked(remoteIds, TMDB_YEAR_CONCURRENCY)) {
+        const settled = await Promise.allSettled(
+          chunk.map((id) => tmdbGet(credentials, `/tv/${id}`, {})),
+        );
+        settled.forEach((outcome, index) => {
+          if (outcome.status !== 'fulfilled') return;
+          const firstAir = outcome.value?.first_air_date;
+          if (typeof firstAir === 'string' && /^\d{4}/.test(firstAir)) {
+            found[String(chunk[index])] = Number(firstAir.slice(0, 4));
           }
         });
       }

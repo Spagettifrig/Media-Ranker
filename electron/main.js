@@ -63,7 +63,7 @@ function resolveImageRequest(requestUrl) {
  * ------------------------------------------------------------------ */
 const DATA_VERSION = 3;
 
-const emptyLibraries = () => ({ games: [], movies: [] });
+const emptyLibraries = () => ({ games: [], movies: [], series: [] });
 
 const emptyState = () => ({
   version: DATA_VERSION,
@@ -105,7 +105,7 @@ function migrate(parsed) {
   if (Array.isArray(parsed.games)) {
     return {
       version: DATA_VERSION,
-      libraries: { games: parsed.games, movies: [] },
+      libraries: { ...emptyLibraries(), games: parsed.games },
       settings,
       claimedBy,
     };

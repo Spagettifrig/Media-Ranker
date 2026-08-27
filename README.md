@@ -1,6 +1,6 @@
 # Game Ranker
 
-A Windows desktop app for ranking and reviewing **games and movies**.
+A Windows desktop app for ranking and reviewing **games, movies and TV series**.
 Local-first: every screen works with no account and no connection, and the
 library lives on your own disk.
 
@@ -38,24 +38,33 @@ desktop shortcut. No admin rights needed.
 
 ### Libraries
 
-A rail down the left switches between **Games** and **Movies** (`Alt+1` /
-`Alt+2`). They are separate rankings that share every screen and every feature;
+A rail down the left switches between **Games**, **Movies** and **TV Series**
+(`Alt+1` / `Alt+2` / `Alt+3`). They are separate rankings that share every screen and every feature;
 each one keeps its own view, search, filters and comparison, so switching back
 lands you where you left off. The rail also holds the theme toggle and the
 keyboard-shortcut sheet.
 
 What differs per library is declared in one place, `src/lib/media.js`:
 
-| | Games | Movies |
-|---|---|---|
-| Categories | Gameplay, Music, Feel, Art, Story | Story, Acting, Music, Visuals, Pacing |
-| Genres | Horror, Shooter, Puzzle, Reading, Tabletop, Action, Adventure, Simulation, Tower Defense, Roguelike, War, Mystery, Management | Horror, Comedy, Drama, Action, Adventure, Thriller, Sci-Fi, Fantasy, Documentary, Romance, Mystery, War, Crime |
-| Second tag | Players: Singleplayer / Multiplayer | Format: Live action / Animated |
-| Time field | Hours played | Runtime |
-| Date field | First played | First watched |
-| Played on | PC, PlayStation, Xbox, Nintendo, Mobile | — |
+| | Games | Movies | TV Series |
+|---|---|---|---|
+| Categories | Gameplay, Music, Feel, Art, Story | Story, Acting, Music, Visuals, Pacing | Story, Acting, Music, Visuals, Pacing, Consistency |
+| Genres | Horror, Shooter, Puzzle, Reading, Tabletop, Action, Adventure, Simulation, Tower Defense, Roguelike, War, Mystery, Management | Horror, Comedy, Drama, Action, Adventure, Thriller, Sci-Fi, Fantasy, Documentary, Romance, Mystery, War, Crime | Horror, Comedy, Drama, Action, Adventure, Thriller, Sci-Fi, Fantasy, Documentary, Mystery, War, Crime, Family, Reality, Western |
+| Second tag | Players: Singleplayer / Multiplayer | Format: Live action / Animated | Format: Live action / Animated |
+| Time field | Hours played | Runtime | Watch time |
+| Date field | First played | First watched | First watched |
+| Played on | PC, PlayStation, Xbox, Nintendo, Mobile | — | — |
+| Catalog | IGDB | TMDB (`/movie`) | TMDB (`/tv`) |
 
-Adding a third library is a matter of adding an entry to that array.
+Adding a fourth library is a matter of adding an entry to that array — plus a
+row per award category in `award_category_defaults` (see `supabase/awards.sql`)
+if it should run a season of its own.
+
+**Series carry their own catalog identity.** TMDB numbers films and shows in
+separate namespaces — movie `1396` and series `1396` are unrelated — so series
+reviews are tagged `provider: 'tmdb_tv'`, not `'tmdb'`. Community reviews and
+trophies join on `(provider, provider_id)` alone, and sharing the tag would
+hang one medium's awards on the other's poster.
 
 ### Screens
 
@@ -103,7 +112,7 @@ read-only overall score, the category sliders, and the free-text boxes.
 ### The awards
 
 Once a year, everyone with an account picks the best of what they played. Each
-library runs its own season with its own categories; both share one timeline.
+library runs its own season with its own categories; all three share one timeline.
 
 **Two rounds.** Round one is open — put forward one pick per category from your
 own library. Round two votes on the top five that came out of it. One round
@@ -120,7 +129,7 @@ four people turn up.
 
 | Basis | Means |
 |---|---|
-| `release_year` | Came out this year — Game of the Year, Movie of the Year |
+| `release_year` | Came out this year — Game of the Year, Movie of the Year, Series of the Year (a series is filed under the year it *premiered*, so a long run is only eligible once; Best Ongoing Series covers the rest) |
 | `first_played_year` | You logged a first-played date this year, whatever its age |
 | `library` | Anything you own — Best Ongoing, Best Rewatch, pure opinion |
 
@@ -182,7 +191,7 @@ Press `?` anywhere for the full list.
 | | |
 |---|---|
 | `Ctrl+F` or `/` | jump to search |
-| `Alt+1` / `Alt+2` | switch library |
+| `Alt+1` / `Alt+2` / `Alt+3` | switch library |
 | `Ctrl+E` | export the ranking as a PNG |
 | Board: arrows | move the selection; `Enter` opens, `Delete` removes |
 | Detail: ↑ / ↓ | pick a category to score |
@@ -263,7 +272,7 @@ stays on and web security is never disabled.
 The file is **version 2**:
 
 ```json
-{ "version": 2, "libraries": { "games": [], "movies": [] }, "settings": { "theme": "dark" } }
+{ "version": 2, "libraries": { "games": [], "movies": [], "series": [] }, "settings": { "theme": "dark" } }
 ```
 
 Version 1 kept a single top-level `games` array. Those files are lifted into

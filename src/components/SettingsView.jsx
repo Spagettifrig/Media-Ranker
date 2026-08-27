@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COVER_ASPECT_OPTIONS } from '../lib/settings.js';
+import { LIBRARIES } from '../lib/media.js';
 
 /**
  * The credentials the online catalog needs, in the order it makes sense to
@@ -11,7 +12,8 @@ const CREDENTIAL_FIELDS = [
   {
     key: 'tmdbToken',
     label: 'TMDB read access token',
-    for: 'Movies',
+    // One token covers both TMDB libraries - films and shows are the same API.
+    for: 'Movies & TV Series',
     hint: 'themoviedb.org → Settings → API. Copy the API Read Access Token, not the v3 key.',
     secret: true,
   },
@@ -60,8 +62,12 @@ const SHORTCUT_SECTIONS = [
       [['?'], 'Show or hide settings'],
       [['Ctrl', 'F'], 'Jump to the search box'],
       [['/'], 'Jump to the search box'],
-      [['Alt', '1'], 'Switch to Games'],
-      [['Alt', '2'], 'Switch to Movies'],
+      // Generated, so a new library in media.js cannot leave this sheet
+      // advertising a shortcut list that no longer matches the rail.
+      ...LIBRARIES.map((library, index) => [
+        ['Alt', String(index + 1)],
+        `Switch to ${library.label}`,
+      ]),
       [['Ctrl', 'E'], 'Export the ranking as a PNG'],
       [['Esc'], 'Close, clear, or step back'],
     ],

@@ -23,6 +23,19 @@ const MOVIE_CATEGORIES = [
   { key: 'pacing', label: 'Pacing' },
 ];
 
+/**
+ * Same five axes a film is judged on, plus the one thing only a series can
+ * get wrong: holding its quality across a run of episodes.
+ */
+const SERIES_CATEGORIES = [
+  { key: 'story', label: 'Story' },
+  { key: 'acting', label: 'Acting' },
+  { key: 'music', label: 'Music' },
+  { key: 'visuals', label: 'Visuals' },
+  { key: 'pacing', label: 'Pacing' },
+  { key: 'consistency', label: 'Consistency' },
+];
+
 function genres(...labels) {
   return labels.map((label) => ({
     key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -118,6 +131,28 @@ const TMDB_TAGS = {
   878: 'sci-fi',
   53: 'thriller',
   10752: 'war',
+};
+
+/**
+ * TMDB keeps a *separate* genre list for television, and the ids do not line
+ * up with the film ones - 16 is Animation in both, but 10759 (Action &
+ * Adventure) and 10765 (Sci-Fi & Fantasy) are pairs that have no film
+ * equivalent at all. Hence a second table, and array values so one broad TV
+ * genre can land as the two tags it actually means.
+ */
+const TMDB_TV_TAGS = {
+  10759: ['action', 'adventure'],
+  35: ['comedy'],
+  80: ['crime'],
+  99: ['documentary'],
+  18: ['drama'],
+  10751: ['family'],
+  10762: ['family'],
+  9648: ['mystery'],
+  10764: ['reality'],
+  10765: ['sci-fi', 'fantasy'],
+  10768: ['war'],
+  37: ['western'],
 };
 
 const TMDB_ANIMATION = 16;
@@ -254,12 +289,95 @@ export const LIBRARIES = [
       placeholder: 'Search TMDB for a movie...',
       credit:
         'This product uses the TMDB API but is not endorsed or certified by TMDB.',
+      // A runtime is a fact about the film, so the import fills it in - unlike
+      // hours played, which is the user's own log. The catalog sheet says so.
+      fillsHours: true,
       tags: (result) => {
         const ids = result.genreIds ?? [];
         return {
           genres: unique(ids.map((id) => TMDB_TAGS[id])),
           // TMDB has no "live action" genre - it only marks Animation, so the
           // absence of that tag is what tells us the rest.
+          modes: [ids.includes(TMDB_ANIMATION) ? 'animated' : 'live-action'],
+        };
+      },
+    },
+  },
+  {
+    key: 'series',
+    label: 'TV Series',
+    item: 'series',
+    Item: 'Series',
+    items: 'series',
+    title: 'Series Ranker',
+    categories: SERIES_CATEGORIES,
+    descriptionFields: [
+      { key: 'overall', label: 'Overall', placeholder: 'A short thought on the whole thing...' },
+      { key: 'story', label: 'Story', placeholder: 'Writing, arcs, how the run lands...' },
+      { key: 'acting', label: 'Acting', placeholder: 'Performances, casting, chemistry...' },
+      { key: 'music', label: 'Music', placeholder: 'Score, theme, sound design...' },
+      { key: 'visuals', label: 'Visuals', placeholder: 'Cinematography, effects, production design...' },
+      { key: 'pacing', label: 'Pacing', placeholder: 'Episode length, momentum, where it drags...' },
+      {
+        key: 'consistency',
+        label: 'Consistency',
+        placeholder: 'Does it hold up season to season, or fall off...',
+      },
+    ],
+    genres: genres(
+      'Horror',
+      'Comedy',
+      'Drama',
+      'Action',
+      'Adventure',
+      'Thriller',
+      'Sci-Fi',
+      'Fantasy',
+      'Documentary',
+      'Mystery',
+      'War',
+      'Crime',
+      'Family',
+      'Reality',
+      'Western',
+    ),
+    modes: [
+      { key: 'live-action', label: 'Live action' },
+      { key: 'animated', label: 'Animated' },
+    ],
+    modesLabel: 'Format',
+    // Same reasoning as movies: "which console" has no answer for a show, so
+    // every platform control keys off this being empty and disappears.
+    platforms: [],
+    platformsLabel: 'Watched on',
+    hours: {
+      label: 'Watch time',
+      unit: 'hours',
+      untracked: 'Not tracked yet',
+      logged: 'watch time',
+      chartTitle: 'Longest series',
+      chartNote: 'Longest first. Add a watch time on a series\' detail page.',
+      totalLabel: 'Hours watched',
+      longestLabel: 'Longest series',
+      scatterTitle: 'Watch time against score',
+    },
+    date: {
+      label: 'First watched',
+      empty: 'No date set',
+      chartTitle: 'Series first watched',
+      chartNote: 'By the year you first started each one.',
+    },
+    catalog: {
+      provider: 'TMDB',
+      placeholder: 'Search TMDB for a TV series...',
+      credit: 'This product uses the TMDB API but is not endorsed or certified by TMDB.',
+      fillsHours: true,
+      tags: (result) => {
+        const ids = result.genreIds ?? [];
+        return {
+          genres: unique(ids.flatMap((id) => TMDB_TV_TAGS[id] ?? [])),
+          // As with movies, TMDB only marks Animation - the absence of that
+          // tag is what tells us the rest.
           modes: [ids.includes(TMDB_ANIMATION) ? 'animated' : 'live-action'],
         };
       },

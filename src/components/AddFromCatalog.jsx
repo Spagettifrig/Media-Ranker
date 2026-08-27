@@ -253,7 +253,7 @@ export default function AddFromCatalog({ config, libraryKey, onAdd, onClose, onO
 
         <p className="sheet__foot">
           {catalog.credit} Scores and reviews stay yours - nothing is filled in but the title,
-          cover, tags{config.key === 'movies' ? ' and runtime' : ''}.
+          cover, tags{catalog.fillsHours ? ` and ${config.hours.label.toLowerCase()}` : ''}.
         </p>
       </div>
     </div>,

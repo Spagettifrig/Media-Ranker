@@ -96,7 +96,21 @@ values
   ('movies', 'acting',    'Best Acting',           4, 'first_played_year', 1, 'acting',      null, 'Performances, casting, chemistry.'),
   ('movies', 'music',     'Best Music',            5, 'first_played_year', 1, 'music',       null, 'Score, songs, sound design.'),
   ('movies', 'visuals',   'Best Visuals',          6, 'first_played_year', 1, 'visuals',     null, 'Cinematography, effects, production design.'),
-  ('movies', 'rewatch',   'Best Rewatch',          7, 'library',           1, null,          null, 'The one you keep going back to. Pure opinion - nominate anything you own.')
+  ('movies', 'rewatch',   'Best Rewatch',          7, 'library',           1, null,          null, 'The one you keep going back to. Pure opinion - nominate anything you own.'),
+
+  -- A series is filed under the year it *premiered*, so 'release_year' here
+  -- means "new this year" and nothing else - a show that started in 2019 is
+  -- never eligible for it again. That is what 'ongoing' is for, exactly as
+  -- Best Ongoing Game works for a live-service title.
+  ('series', 'soty',        'Series of the Year',    1, 'release_year',      1, '__overall__', null,       'Premiered this year. The big one.'),
+  ('series', 'discovery',   'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null,       'Any age - you just got to it this year.'),
+  ('series', 'story',       'Best Story',            3, 'first_played_year', 1, 'story',       null,       'Writing, arcs, how the run lands.'),
+  ('series', 'acting',      'Best Acting',           4, 'first_played_year', 1, 'acting',      null,       'Performances, casting, chemistry.'),
+  ('series', 'music',       'Best Music',            5, 'first_played_year', 1, 'music',       null,       'Score, theme, sound design.'),
+  ('series', 'visuals',     'Best Visuals',          6, 'first_played_year', 1, 'visuals',     null,       'Cinematography, effects, production design.'),
+  ('series', 'consistency', 'Most Consistent',       7, 'first_played_year', 1, 'consistency', null,       'Holds its quality season to season.'),
+  ('series', 'animated',    'Best Animated Series',  8, 'first_played_year', 1, '__overall__', 'animated', 'Must be tagged Animated in your library.'),
+  ('series', 'ongoing',     'Best Ongoing Series',   9, 'library',           1, null,          null,       'Still running, still worth it. Pure opinion - nominate anything you own.')
 on conflict (library_key, key) do nothing;
 
 alter table public.award_category_defaults enable row level security;
