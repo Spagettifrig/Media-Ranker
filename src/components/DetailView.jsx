@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CommunityReviews from './CommunityReviews.jsx';
+import ConfirmDialog from './ConfirmDialog.jsx';
 import ScoreSlider from './ScoreSlider.jsx';
 import SaveIndicator from './SaveIndicator.jsx';
 import TagChips from './TagChips.jsx';
@@ -203,14 +204,10 @@ export default function DetailView({
     onRemoveImage(currentFile);
   }
 
-  function handleDelete() {
-    const ok = window.confirm(
-      `Delete "${item.title}"? Its images and notes will be removed. This cannot be undone.`,
-    );
-    if (ok) onDelete();
-  }
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   return (
+    <>
     <div className="screen detail">
       <header className="detail__header">
         <button type="button" className="btn btn--ghost" onClick={onBack}>
@@ -233,7 +230,11 @@ export default function DetailView({
         <div className="detail__header-actions">
           {won.length > 0 ? <TrophyBadge trophies={won} size="lg" /> : null}
           <SaveIndicator state={saveState} />
-          <button type="button" className="btn btn--danger-ghost" onClick={handleDelete}>
+          <button
+            type="button"
+            className="btn btn--danger-ghost"
+            onClick={() => setConfirmingDelete(true)}
+          >
             Delete
           </button>
         </div>
@@ -529,6 +530,19 @@ export default function DetailView({
         <CommunityReviews item={item} user={user} onOpenProfile={onOpenProfile} />
       </div>
     </div>
+    {confirmingDelete ? (
+      <ConfirmDialog
+        title={`Delete this ${config.item}?`}
+        message={`"${item.title}" and its images and notes will be removed. This can't be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          onDelete();
+        }}
+        onCancel={() => setConfirmingDelete(false)}
+      />
+    ) : null}
+    </>
   );
 }
 

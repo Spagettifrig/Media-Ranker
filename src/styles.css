@@ -22,6 +22,8 @@
   --accent-soft: rgba(127, 155, 255, 0.16);
   --danger: #ff8080;
   --danger-soft: rgba(226, 59, 59, 0.12);
+  --danger-solid: #e5484d;
+  --danger-solid-hover: #ec5d62;
   --scrollbar: #2b313d;
   --scrollbar-hover: #39414f;
   --placeholder: #59616f;
@@ -60,6 +62,8 @@
   --accent-soft: rgba(63, 95, 216, 0.12);
   --danger: #c62d2d;
   --danger-soft: rgba(198, 45, 45, 0.1);
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #c81e1e;
   --scrollbar: #c6ccd8;
   --scrollbar-hover: #aeb6c6;
   --placeholder: #9aa2b1;
@@ -431,6 +435,16 @@ kbd {
 .btn--danger-ghost:not(:disabled):hover {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.btn--danger {
+  background: var(--danger-solid);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn--danger:not(:disabled):hover {
+  background: var(--danger-solid-hover);
 }
 
 .btn--lg {
@@ -853,6 +867,21 @@ kbd {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
   gap: 30px 26px;
+}
+
+/* While a marquee is dragging, don't let it select card text as it sweeps. */
+.board__grid.is-marqueeing {
+  user-select: none;
+}
+
+/* The rubber-band rectangle drawn over empty board space. */
+.marquee {
+  position: fixed;
+  z-index: 90;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
 }
 
 .card {
@@ -2632,6 +2661,38 @@ kbd {
      and the attribution stay put while you arrow through matches. */
   overflow: hidden;
   max-height: min(680px, 100%);
+}
+
+/* ------------------------------------------------------------------ *
+ * Confirm dialog (replaces window.confirm)
+ * ------------------------------------------------------------------ */
+.sheet--confirm {
+  width: min(430px, 100%);
+}
+
+.confirm {
+  display: grid;
+  gap: 9px;
+  padding: 22px 24px 20px;
+}
+
+.confirm__title {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.confirm__message {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.confirm__actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .catalog__search {

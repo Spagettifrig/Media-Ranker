@@ -16,6 +16,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import ConfirmDialog from './ConfirmDialog.jsx';
 import ContextMenu from './ContextMenu.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
 import TrophyBadge from './TrophyBadge.jsx';
@@ -46,9 +47,18 @@ export default function BoardView({
   onClearFilters,
 }) {
   const [activeId, setActiveId] = useState(null);
-  // { id, x, y } while a card's right-click menu is open.
+  // { ids, x, y } while a right-click menu is open. `ids` is every card the
+  // menu acts on - one card, or the whole multi-selection.
   const [menu, setMenu] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+  // The multi-selection: a Set of item ids picked out with Ctrl/Shift-click or
+  // a marquee drag over empty board space.
+  const [selection, setSelection] = useState(() => new Set());
+  // The keyboard cursor, and the anchor a Shift-click range extends from.
+  const [cursorId, setCursorId] = useState(null);
+  // { left, top, right, bottom } in client coords while a marquee is dragging.
+  const [marquee, setMarquee] = useState(null);
+  // ids awaiting the delete confirmation, or null.
+  const [pendingDelete, setPendingDelete] = useState(null);
   const gridRef = useRef(null);
   const cardRefs = useRef(new Map());
 
@@ -61,23 +71,71 @@ export default function BoardView({
   const ids = useMemo(() => items.map((item) => item.id), [items]);
   const activeItem = activeId ? items.find((item) => item.id === activeId) : null;
   const activePosition = activeItem ? items.indexOf(activeItem) + 1 : 0;
-  const menuItem = menu ? items.find((item) => item.id === menu.id) : null;
+  const menuValid = menu ? menu.ids.some((id) => ids.includes(id)) : false;
 
   const closeMenu = useCallback(() => setMenu(null), []);
+  const titleOf = useCallback(
+    (id) => items.find((item) => item.id === id)?.title ?? '',
+    [items],
+  );
 
-  /* Keep the keyboard cursor pointing at something that still exists. */
+  /* Drop from the selection anything that has since been deleted. */
   useEffect(() => {
-    if (selectedId && !ids.includes(selectedId)) setSelectedId(null);
-  }, [ids, selectedId]);
+    if (cursorId && !ids.includes(cursorId)) setCursorId(null);
+    setSelection((prev) => {
+      const next = new Set([...prev].filter((id) => ids.includes(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [ids, cursorId]);
 
-  const confirmDelete = useCallback(
-    (item) => {
-      const ok = window.confirm(
-        `Delete "${item.title}"? Its images and notes will be removed. This cannot be undone.`,
-      );
-      if (ok) onDelete(item.id);
+  /* Open the styled confirm for a set of ids. */
+  const askDelete = useCallback(
+    (idList) => {
+      const present = idList.filter((id) => ids.includes(id));
+      if (present.length === 0) return;
+      setMenu(null);
+      setPendingDelete(present);
     },
-    [onDelete],
+    [ids],
+  );
+
+  const performDelete = useCallback(() => {
+    (pendingDelete ?? []).forEach((id) => onDelete(id));
+    setPendingDelete(null);
+    setSelection(new Set());
+    setCursorId(null);
+  }, [pendingDelete, onDelete]);
+
+  /* Ctrl/Cmd-click toggles a card; Shift-click extends a range from the
+     cursor. A plain click still just opens the card. */
+  const handleCardClick = useCallback(
+    (item, event) => {
+      if (event.shiftKey) {
+        event.preventDefault();
+        const from = cursorId ?? item.id;
+        const a = ids.indexOf(from);
+        const b = ids.indexOf(item.id);
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          setSelection(new Set(ids.slice(lo, hi + 1)));
+        }
+        setCursorId(item.id);
+        return;
+      }
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setSelection((prev) => {
+          const next = new Set(prev);
+          if (next.has(item.id)) next.delete(item.id);
+          else next.add(item.id);
+          return next;
+        });
+        setCursorId(item.id);
+        return;
+      }
+      onOpen(item.id);
+    },
+    [ids, cursorId, onOpen],
   );
 
   /* ---- keyboard navigation ------------------------------------------- *
@@ -98,10 +156,17 @@ export default function BoardView({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) {
         return;
       }
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (pendingDelete || marquee) return;
       if (items.length === 0) return;
 
-      const index = selectedId ? ids.indexOf(selectedId) : -1;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        setSelection(new Set(ids));
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const index = cursorId ? ids.indexOf(cursorId) : -1;
       const columns = columnCount();
       let next = null;
 
@@ -131,16 +196,19 @@ export default function BoardView({
           }
           return;
         case 'Delete':
-        case 'Backspace':
-          if (index >= 0) {
+        case 'Backspace': {
+          const targets = selection.size > 0 ? [...selection] : index >= 0 ? [ids[index]] : [];
+          if (targets.length) {
             event.preventDefault();
-            confirmDelete(items[index]);
+            askDelete(targets);
           }
           return;
+        }
         case 'Escape':
-          if (selectedId) {
+          if (selection.size > 0 || cursorId) {
             event.preventDefault();
-            setSelectedId(null);
+            setSelection(new Set());
+            setCursorId(null);
           }
           return;
         default:
@@ -149,13 +217,14 @@ export default function BoardView({
 
       event.preventDefault();
       const id = ids[next];
-      setSelectedId(id);
+      setCursorId(id);
+      setSelection(new Set([id]));
       cardRefs.current.get(id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [ids, items, selectedId, columnCount, onOpen, confirmDelete]);
+  }, [ids, items, cursorId, selection, pendingDelete, marquee, columnCount, onOpen, askDelete]);
 
   function handleDragEnd(event) {
     setActiveId(null);
@@ -174,8 +243,67 @@ export default function BoardView({
 
   function openMenu(item, event) {
     event.preventDefault();
-    setSelectedId(item.id);
-    setMenu({ id: item.id, x: event.clientX, y: event.clientY });
+    setCursorId(item.id);
+    // A right-click on a card that's part of a multi-selection acts on the
+    // whole selection; otherwise it narrows to just that card.
+    const acting =
+      selection.size > 1 && selection.has(item.id) ? [...selection] : [item.id];
+    if (acting.length === 1) setSelection(new Set(acting));
+    setMenu({ ids: acting, x: event.clientX, y: event.clientY });
+  }
+
+  /* Right-click on empty board space, with a selection, offers the bulk menu. */
+  function handleGridContextMenu(event) {
+    if (event.target !== gridRef.current) return;
+    if (selection.size === 0) return;
+    event.preventDefault();
+    setMenu({ ids: [...selection], x: event.clientX, y: event.clientY });
+  }
+
+  /* A press that starts on empty grid space (not on a card) drags a marquee
+     that selects every card it touches. Holding Shift/Ctrl adds to the
+     current selection instead of replacing it. */
+  function beginMarquee(event) {
+    if (event.button !== 0 || event.target !== gridRef.current) return;
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+    const base = additive ? new Set(selection) : new Set();
+    const origin = { x: event.clientX, y: event.clientY };
+    let moved = false;
+    setMenu(null);
+
+    function onMove(e) {
+      if (!moved && Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 4) return;
+      moved = true;
+      const rect = {
+        left: Math.min(origin.x, e.clientX),
+        top: Math.min(origin.y, e.clientY),
+        right: Math.max(origin.x, e.clientX),
+        bottom: Math.max(origin.y, e.clientY),
+      };
+      setMarquee(rect);
+      const hit = new Set(base);
+      for (const [id, node] of cardRefs.current) {
+        if (!node) continue;
+        const b = node.getBoundingClientRect();
+        if (b.left < rect.right && b.right > rect.left && b.top < rect.bottom && b.bottom > rect.top) {
+          hit.add(id);
+        }
+      }
+      setSelection(hit);
+    }
+
+    function onUp() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      setMarquee(null);
+      if (!moved && !additive) {
+        setSelection(new Set());
+        setCursorId(null);
+      }
+    }
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   }
 
   if (items.length === 0) {
@@ -232,11 +360,11 @@ export default function BoardView({
       config,
       trophies,
       position: index + 1,
-      isMenuTarget: menu?.id === item.id,
-      isSelected: selectedId === item.id,
+      isMenuTarget: menu?.ids.includes(item.id) ?? false,
+      isSelected: selection.has(item.id) || cursorId === item.id,
       registerCard,
-      onOpen: () => onOpen(item.id),
-      onSelect: () => setSelectedId(item.id),
+      onActivate: (event) => handleCardClick(item, event),
+      onCursor: () => setCursorId(item.id),
       onContextMenu: (event) => openMenu(item, event),
     };
     return reorderable ? (
@@ -246,31 +374,80 @@ export default function BoardView({
     );
   });
 
-  const menuNode = menuItem ? (
+  const menuNode = menuValid ? (
     <ContextMenu
       x={menu.x}
       y={menu.y}
       onClose={closeMenu}
-      items={[
-        { key: 'open', label: 'Open', onSelect: () => onOpen(menuItem.id) },
-        { key: 'compare', label: 'Compare with...', onSelect: () => onCompare(menuItem.id) },
-        {
-          key: 'delete',
-          label: `Delete "${truncate(menuItem.title)}"`,
-          danger: true,
-          onSelect: () => confirmDelete(menuItem),
-        },
-      ]}
+      items={
+        menu.ids.length > 1
+          ? [
+              {
+                key: 'delete',
+                label: `Delete ${menu.ids.length} ${config.items}`,
+                danger: true,
+                onSelect: () => askDelete(menu.ids),
+              },
+            ]
+          : [
+              { key: 'open', label: 'Open', onSelect: () => onOpen(menu.ids[0]) },
+              { key: 'compare', label: 'Compare with...', onSelect: () => onCompare(menu.ids[0]) },
+              {
+                key: 'delete',
+                label: `Delete "${truncate(titleOf(menu.ids[0]))}"`,
+                danger: true,
+                onSelect: () => askDelete([menu.ids[0]]),
+              },
+            ]
+      }
+    />
+  ) : null;
+
+  const deleteCount = pendingDelete?.length ?? 0;
+  const deleteDialog = pendingDelete ? (
+    <ConfirmDialog
+      title={
+        deleteCount === 1
+          ? `Delete this ${config.item}?`
+          : `Delete ${deleteCount} ${config.items}?`
+      }
+      message={
+        deleteCount === 1
+          ? `"${titleOf(pendingDelete[0])}" and its images and notes will be removed. This can't be undone.`
+          : `${deleteCount} ${config.items} and all their images and notes will be removed. This can't be undone.`
+      }
+      confirmLabel={deleteCount === 1 ? 'Delete' : `Delete ${deleteCount}`}
+      onConfirm={performDelete}
+      onCancel={() => setPendingDelete(null)}
+    />
+  ) : null;
+
+  const marqueeNode = marquee ? (
+    <div
+      className="marquee"
+      style={{
+        left: marquee.left,
+        top: marquee.top,
+        width: marquee.right - marquee.left,
+        height: marquee.bottom - marquee.top,
+      }}
     />
   ) : null;
 
   if (!reorderable) {
     return (
       <>
-        <ul className="board__grid" ref={gridRef}>
+        <ul
+          className={`board__grid${marquee ? ' is-marqueeing' : ''}`}
+          ref={gridRef}
+          onPointerDown={beginMarquee}
+          onContextMenu={handleGridContextMenu}
+        >
           {cards}
         </ul>
         {menuNode}
+        {marqueeNode}
+        {deleteDialog}
       </>
     );
   }
@@ -288,7 +465,12 @@ export default function BoardView({
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={ids} strategy={rectSortingStrategy}>
-          <ul className="board__grid" ref={gridRef}>
+          <ul
+            className={`board__grid${marquee ? ' is-marqueeing' : ''}`}
+            ref={gridRef}
+            onPointerDown={beginMarquee}
+            onContextMenu={handleGridContextMenu}
+          >
             {cards}
           </ul>
         </SortableContext>
@@ -308,6 +490,8 @@ export default function BoardView({
       </DndContext>
 
       {menuNode}
+      {marqueeNode}
+      {deleteDialog}
     </>
   );
 }
@@ -339,8 +523,8 @@ function SortableCard({
   isMenuTarget,
   isSelected,
   registerCard,
-  onOpen,
-  onSelect,
+  onActivate,
+  onCursor,
   onContextMenu,
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -356,18 +540,18 @@ function SortableCard({
   function handleKeyDown(event) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      onOpen();
+      onActivate(event);
       return;
     }
     listeners?.onKeyDown?.(event);
   }
 
-  // Marks the card selected *and* still hands the press to dnd-kit's own
+  // Moves the keyboard cursor here *and* still hands the press to dnd-kit's own
   // pointer sensor - this prop is applied after the `{...listeners}` spread,
   // so without the explicit forward it would silently swallow dnd-kit's
   // handler and no drag would ever start.
   function handlePointerDown(event) {
-    onSelect();
+    onCursor();
     listeners?.onPointerDown?.(event);
   }
 
@@ -382,7 +566,7 @@ function SortableCard({
       {...attributes}
       {...listeners}
       onKeyDown={handleKeyDown}
-      onClick={onOpen}
+      onClick={onActivate}
       onPointerDown={handlePointerDown}
       onContextMenu={onContextMenu}
       aria-label={cardLabel(item, position)}
@@ -401,8 +585,8 @@ function StaticCard({
   isMenuTarget,
   isSelected,
   registerCard,
-  onOpen,
-  onSelect,
+  onActivate,
+  onCursor,
   onContextMenu,
 }) {
   return (
@@ -410,13 +594,13 @@ function StaticCard({
       ref={(node) => registerCard(item.id, node)}
       className={cardClass({ isDragging: false, isMenuTarget, isSelected })}
       tabIndex={0}
-      onClick={onOpen}
-      onPointerDown={onSelect}
+      onClick={onActivate}
+      onPointerDown={onCursor}
       onContextMenu={onContextMenu}
       onKeyDown={(event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
-          onOpen();
+          onActivate(event);
         }
       }}
       aria-label={cardLabel(item, position)}
