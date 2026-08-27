@@ -35,13 +35,40 @@ The steps don't change — only the version number and commit message.
    ```powershell
    npm run release
    ```
-   Runs: make icon -> vite build -> `electron-builder --win nsis --publish always`.
-   Output: `release\Game-Ranker-Setup-<version>.exe` (+ `latest.yml`), uploaded to
-   the GitHub releases of `Spagettifrig/Media-Ranker`.
+   Runs: make icon -> vite build -> `npm run tag` -> `electron-builder --win nsis
+   --publish always`.
+   Output: `release\Game-Ranker-Setup-<version>.exe` (+ `latest.yml`), published
+   to the GitHub releases of `Spagettifrig/Media-Ranker`.
+
+   `npm run tag` creates and pushes `v<version>` before the upload. That tag is
+   load-bearing - see "Why the tag matters" below. It refuses to run on a dirty
+   working tree, or when the tag already exists somewhere other than `HEAD`
+   (which means you forgot to bump the version).
 
 4. **Verify** at https://github.com/Spagettifrig/Media-Ranker/releases that the
-   release has both the `.exe` and `latest.yml` attached. `latest.yml` is what
-   installed apps read to detect the update.
+   release is **not a draft** and has the `.exe`, `.exe.blockmap` and
+   `latest.yml` attached. `latest.yml` is what installed apps read to detect the
+   update. A quick check that it is really live:
+   ```powershell
+   (New-Object System.Net.WebClient).DownloadString("https://github.com/Spagettifrig/Media-Ranker/releases/latest/download/latest.yml")
+   ```
+   It should print the version you just shipped.
+
+## Why the tag matters
+
+GitHub rejects an already-published release unless a matching tag exists, so
+this project used to publish **drafts** instead. That cost us twice:
+
+- **Drafts are invisible to the updater.** v1.2.1, v1.4.0 and v1.5.0 were all
+  cut and then left sitting as unpublished drafts. Every installed copy stayed
+  pinned to v1.2.0 for months and nothing failed loudly.
+- **Drafts have no tag, so GitHub cannot deduplicate them.** electron-builder
+  runs its publisher twice; with drafts, both calls saw "release doesn't exist"
+  and each made its own, splitting the installer and `latest.yml` across two
+  half-releases.
+
+Tagging first fixes both. Do not remove `releaseType: "release"` from the
+`build.publish` block in `package.json` without putting the tagging step back.
 
 ## How users receive it
 
@@ -59,4 +86,22 @@ The steps don't change — only the version number and commit message.
 - **`GitHub Personal Access Token is not set`**: `GH_TOKEN` missing from the
   environment. Set it as shown above and reopen the shell.
 - **Release uploaded but users don't update**: check `latest.yml` is attached to
-  the GitHub release and the version in it is higher than what they have.
+  the GitHub release and the version in it is higher than what they have. Then
+  check the release is **published, not a draft** - the updater cannot see
+  drafts, and this is what silently stranded everyone on v1.2.0.
+
+- **`Working tree has uncommitted changes`** from `npm run tag`: commit or stash
+  first. A release must be reproducible from the tag, and tagging a dirty tree
+  would make the tag point at code that was never built.
+
+- **`Tag vX.Y.Z already exists but points at ...`**: you did not bump `version`
+  in `package.json`, so the release script tried to re-tag a version that has
+  already shipped. Bump it and re-run.
+
+- **Two releases appear for one version**: only possible if the tagging step was
+  skipped - see "Why the tag matters". Keep the one holding `latest.yml`, move
+  any other assets onto it, and delete the empty one.
+
+- **Anyone still on v1.0**: that build predates the auto-updater entirely (it
+  arrived in v1.2.0), so it will never update itself no matter what is
+  published. Send those users the `.exe` directly; they auto-update from then on.
