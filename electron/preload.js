@@ -78,6 +78,22 @@ contextBridge.exposeInMainWorld('api', {
   /** Build a renderer-safe URL for a stored image file name. */
   imageUrl: (name) => (name ? `gameimg://img/${encodeURIComponent(name)}` : null),
 
+  /**
+   * Build a renderer-safe URL for catalog art that has not been downloaded
+   * yet (search results). The main process does the actual fetching, and only
+   * for the providers' own image hosts - see CATALOG_IMAGE_HOSTS in main.js.
+   */
+  catalogImageUrl: (url) => {
+    if (typeof url !== 'string' || !url) return null;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return null;
+      return `catalogimg://${parsed.hostname}${parsed.pathname}${parsed.search}`;
+    } catch {
+      return null;
+    }
+  },
+
   /** Create a new account. Resolves to { ok, user } or { ok: false, error }. */
   signUp: (email, password) => ipcRenderer.invoke('auth:signUp', { email, password }),
 
@@ -120,8 +136,34 @@ contextBridge.exposeInMainWorld('api', {
   fetchPublicReviews: (provider, providerId) =>
     ipcRenderer.invoke('sync:fetchPublicReviews', provider, providerId),
 
-  /** One user's visible-to-you reviews. Resolves to { ok, displayName, reviews } or { ok: false, error }. */
+  /** One user's visible-to-you reviews. Resolves to { ok, displayName, username, reviews } or { ok: false, error }. */
   fetchProfileReviews: (userId) => ipcRenderer.invoke('sync:fetchProfileReviews', userId),
+
+  /* ---- friends --------------------------------------------------------
+   * Search and the request flow are SECURITY DEFINER RPCs for the same
+   * reason the awards are: finding someone you have never met means
+   * reading a profile row you are not otherwise allowed to read, so the
+   * rule about who may see what has to live in the database, not here.
+   * ------------------------------------------------------------------- */
+
+  /** Change your own username. Resolves to { ok, username } or { ok: false, error }. */
+  updateUsername: (username) => ipcRenderer.invoke('sync:updateUsername', username),
+
+  /** Find users by username or display name. Resolves to { ok, results } - each carries its own friendStatus. */
+  searchProfiles: (query) => ipcRenderer.invoke('sync:searchProfiles', query),
+
+  /** Ask to be someone's friend. Resolves to { ok, status } - 'pending_out' or 'friends'. */
+  sendFriendRequest: (targetId) => ipcRenderer.invoke('sync:sendFriendRequest', targetId),
+
+  /** Accept (`true`) or decline (`false`) a request someone sent you. */
+  respondFriendRequest: (requesterId, accept) =>
+    ipcRenderer.invoke('sync:respondFriendRequest', requesterId, accept),
+
+  /** Unfriend, decline, or cancel a request you sent - all the same removal. */
+  removeFriend: (otherId) => ipcRenderer.invoke('sync:removeFriend', otherId),
+
+  /** Your friends and both directions of pending request. Resolves to { ok, friends, incoming, outgoing }. */
+  fetchFriends: () => ipcRenderer.invoke('sync:fetchFriends'),
 
   /* ---- awards ---------------------------------------------------------
    * Every one of these is an RPC into a SECURITY DEFINER function. None of

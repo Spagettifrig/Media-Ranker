@@ -23,6 +23,13 @@
 --  * The aggregate functions are SECURITY DEFINER because awards must
 --    count *private* reviews too - a private profile still gets a vote.
 --    They only ever return aggregates and winners, never rows.
+--
+--  * One caveat on "idempotent": `create or replace function` cannot change
+--    a function's *return type*. Adding or removing a column from a
+--    `returns table (...)` needs an explicit `drop function` first, or the
+--    re-run fails with 42P13 partway through - see get_award_trophies().
+--    Changing an argument list is worse: it creates a second overload
+--    instead of failing, so drop the old signature by name.
 -- ===================================================================
 
 -- ------------------------------------------------------------------
@@ -63,6 +70,12 @@ alter table public.profiles add column if not exists is_admin boolean not null d
 --                  '__overall__' for the overall score, NULL for none.
 --   requires_mode  nominee must carry this mode tag in the voter's own
 --                  library (this is how Best Multiplayer is restricted).
+--   direction      'best'  - the highest score wins (almost everything)
+--                  'worst' - the lowest score wins (Worst of the Year).
+--                  Only affects the Critics' Choice half and the order
+--                  nominees are offered in; the community vote is a count
+--                  either way, since voting for the worst thing is still
+--                  just voting.
 -- ------------------------------------------------------------------
 create table if not exists public.award_category_defaults (
   library_key   text    not null,
@@ -77,40 +90,53 @@ create table if not exists public.award_category_defaults (
   primary key (library_key, key)
 );
 
-insert into public.award_category_defaults
-  (library_key, key, label, sort_order, basis, basis_years, computed_key, requires_mode, blurb)
-values
-  ('games', 'goty',        'Game of the Year',      1, 'release_year',      1, '__overall__', null,          'Released this year. The big one.'),
-  ('games', 'discovery',   'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null,          'Any age - you just got to it this year.'),
-  ('games', 'gameplay',    'Best Gameplay',         3, 'first_played_year', 1, 'gameplay',    null,          'Systems, controls, the moment-to-moment.'),
-  ('games', 'story',       'Best Story',            4, 'first_played_year', 1, 'story',       null,          'Writing, characters, how it lands.'),
-  ('games', 'art',         'Best Art',              5, 'first_played_year', 1, 'art',         null,          'Direction and style.'),
-  ('games', 'music',       'Best Music',            6, 'first_played_year', 1, 'music',       null,          'Soundtrack and sound design.'),
-  ('games', 'feel',        'Best Feel',             7, 'first_played_year', 1, 'feel',        null,          'Weight, feedback, responsiveness.'),
-  ('games', 'multiplayer', 'Best Multiplayer',      8, 'first_played_year', 1, '__overall__', 'multiplayer', 'Must be tagged Multiplayer in your library.'),
-  ('games', 'ongoing',     'Best Ongoing Game',     9, 'library',           1, null,          null,          'Still going, still worth it. Pure opinion - nominate anything you own.'),
+-- Added after the first release; every category that predates it is a
+-- 'best' one, which is exactly what the default gives them.
+alter table public.award_category_defaults
+  add column if not exists direction text not null default 'best'
+  check (direction in ('best', 'worst'));
 
-  ('movies', 'moty',      'Movie of the Year',     1, 'release_year',      1, '__overall__', null, 'Released this year.'),
-  ('movies', 'discovery', 'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null, 'Any age - you just got to it this year.'),
-  ('movies', 'story',     'Best Story',            3, 'first_played_year', 1, 'story',       null, 'Writing, structure, how it lands.'),
-  ('movies', 'acting',    'Best Acting',           4, 'first_played_year', 1, 'acting',      null, 'Performances, casting, chemistry.'),
-  ('movies', 'music',     'Best Music',            5, 'first_played_year', 1, 'music',       null, 'Score, songs, sound design.'),
-  ('movies', 'visuals',   'Best Visuals',          6, 'first_played_year', 1, 'visuals',     null, 'Cinematography, effects, production design.'),
-  ('movies', 'rewatch',   'Best Rewatch',          7, 'library',           1, null,          null, 'The one you keep going back to. Pure opinion - nominate anything you own.'),
+insert into public.award_category_defaults
+  (library_key, key, label, sort_order, basis, basis_years, computed_key, requires_mode, blurb, direction)
+values
+  ('games', 'goty',        'Game of the Year',      1, 'release_year',      1, '__overall__', null,          'Released this year. The big one.', 'best'),
+  ('games', 'discovery',   'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null,          'Any age - you just got to it this year.', 'best'),
+  ('games', 'gameplay',    'Best Gameplay',         3, 'first_played_year', 1, 'gameplay',    null,          'Systems, controls, the moment-to-moment.', 'best'),
+  ('games', 'story',       'Best Story',            4, 'first_played_year', 1, 'story',       null,          'Writing, characters, how it lands.', 'best'),
+  ('games', 'art',         'Best Art',              5, 'first_played_year', 1, 'art',         null,          'Direction and style.', 'best'),
+  ('games', 'music',       'Best Music',            6, 'first_played_year', 1, 'music',       null,          'Soundtrack and sound design.', 'best'),
+  ('games', 'feel',        'Best Feel',             7, 'first_played_year', 1, 'feel',        null,          'Weight, feedback, responsiveness.', 'best'),
+  ('games', 'multiplayer', 'Best Multiplayer',      8, 'first_played_year', 1, '__overall__', 'multiplayer', 'Must be tagged Multiplayer in your library.', 'best'),
+  ('games', 'ongoing',     'Best Ongoing Game',     9, 'library',           1, null,          null,          'Still going, still worth it. Pure opinion - nominate anything you own.', 'best'),
+  -- Same window and same score as Game of the Year, read from the other
+  -- end. Revealed last, which is the right place for it.
+  ('games', 'worst',       'Worst Game of the Year', 10, 'release_year',     1, '__overall__', null,          'Released this year. Someone has to say it.', 'worst'),
+
+  ('movies', 'moty',      'Movie of the Year',     1, 'release_year',      1, '__overall__', null, 'Released this year.', 'best'),
+  ('movies', 'discovery', 'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null, 'Any age - you just got to it this year.', 'best'),
+  ('movies', 'story',     'Best Story',            3, 'first_played_year', 1, 'story',       null, 'Writing, structure, how it lands.', 'best'),
+  ('movies', 'acting',    'Best Acting',           4, 'first_played_year', 1, 'acting',      null, 'Performances, casting, chemistry.', 'best'),
+  ('movies', 'music',     'Best Music',            5, 'first_played_year', 1, 'music',       null, 'Score, songs, sound design.', 'best'),
+  ('movies', 'visuals',   'Best Visuals',          6, 'first_played_year', 1, 'visuals',     null, 'Cinematography, effects, production design.', 'best'),
+  ('movies', 'rewatch',   'Best Rewatch',          7, 'library',           1, null,          null, 'The one you keep going back to. Pure opinion - nominate anything you own.', 'best'),
+  ('movies', 'worst',     'Worst Movie of the Year', 8, 'release_year',    1, '__overall__', null, 'Released this year. Someone has to say it.', 'worst'),
 
   -- A series is filed under the year it *premiered*, so 'release_year' here
   -- means "new this year" and nothing else - a show that started in 2019 is
   -- never eligible for it again. That is what 'ongoing' is for, exactly as
   -- Best Ongoing Game works for a live-service title.
-  ('series', 'soty',        'Series of the Year',    1, 'release_year',      1, '__overall__', null,       'Premiered this year. The big one.'),
-  ('series', 'discovery',   'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null,       'Any age - you just got to it this year.'),
-  ('series', 'story',       'Best Story',            3, 'first_played_year', 1, 'story',       null,       'Writing, arcs, how the run lands.'),
-  ('series', 'acting',      'Best Acting',           4, 'first_played_year', 1, 'acting',      null,       'Performances, casting, chemistry.'),
-  ('series', 'music',       'Best Music',            5, 'first_played_year', 1, 'music',       null,       'Score, theme, sound design.'),
-  ('series', 'visuals',     'Best Visuals',          6, 'first_played_year', 1, 'visuals',     null,       'Cinematography, effects, production design.'),
-  ('series', 'consistency', 'Most Consistent',       7, 'first_played_year', 1, 'consistency', null,       'Holds its quality season to season.'),
-  ('series', 'animated',    'Best Animated Series',  8, 'first_played_year', 1, '__overall__', 'animated', 'Must be tagged Animated in your library.'),
-  ('series', 'ongoing',     'Best Ongoing Series',   9, 'library',           1, null,          null,       'Still running, still worth it. Pure opinion - nominate anything you own.')
+  ('series', 'soty',        'Series of the Year',    1, 'release_year',      1, '__overall__', null,       'Premiered this year. The big one.', 'best'),
+  ('series', 'discovery',   'Discovery of the Year', 2, 'first_played_year', 1, '__overall__', null,       'Any age - you just got to it this year.', 'best'),
+  ('series', 'story',       'Best Story',            3, 'first_played_year', 1, 'story',       null,       'Writing, arcs, how the run lands.', 'best'),
+  ('series', 'acting',      'Best Acting',           4, 'first_played_year', 1, 'acting',      null,       'Performances, casting, chemistry.', 'best'),
+  ('series', 'music',       'Best Music',            5, 'first_played_year', 1, 'music',       null,       'Score, theme, sound design.', 'best'),
+  ('series', 'visuals',     'Best Visuals',          6, 'first_played_year', 1, 'visuals',     null,       'Cinematography, effects, production design.', 'best'),
+  ('series', 'consistency', 'Most Consistent',       7, 'first_played_year', 1, 'consistency', null,       'Holds its quality season to season.', 'best'),
+  ('series', 'animated',    'Best Animated Series',  8, 'first_played_year', 1, '__overall__', 'animated', 'Must be tagged Animated in your library.', 'best'),
+  ('series', 'ongoing',     'Best Ongoing Series',   9, 'library',           1, null,          null,       'Still running, still worth it. Pure opinion - nominate anything you own.', 'best'),
+  -- "Premiered this year", same as Series of the Year - a show that started
+  -- badly in 2019 is not dragged back in every year to be booed again.
+  ('series', 'worst',       'Worst Show of the Year', 10, 'release_year',    1, '__overall__', null,       'Premiered this year. Someone has to say it.', 'worst')
 on conflict (library_key, key) do nothing;
 
 alter table public.award_category_defaults enable row level security;
@@ -313,7 +339,8 @@ begin
                'basis_years', d.basis_years,
                'computed_key', d.computed_key,
                'requires_mode', d.requires_mode,
-               'blurb', d.blurb
+               'blurb', d.blurb,
+               'direction', d.direction
              )
              order by d.sort_order
            ),
@@ -507,7 +534,10 @@ begin
              else true
            end
        and (cat ->> 'requires_mode' is null or (cat ->> 'requires_mode') = any(r.modes))
-     order by r.overall_score desc, r.title asc;
+     -- Nominees for a 'worst' category are offered worst-first, so the
+     -- picker opens on the ones the voter is actually looking for.
+     order by r.overall_score * (case when cat ->> 'direction' = 'worst' then -1 else 1 end) desc,
+              r.title asc;
 end;
 $$;
 
@@ -920,7 +950,12 @@ begin
              )
            group by r.provider, r.provider_id
           having count(*) >= season.min_reviews_for_computed
-           order by avg_score desc, n_reviews desc, r.provider_id asc
+           -- Flipping the sign rather than branching on the sort keeps this
+           -- a single plan: a 'worst' category wants the lowest average, and
+           -- -avg descending is the lowest ascending.
+           order by avg_score * (case when cat ->> 'direction' = 'worst' then -1 else 1 end) desc,
+                    n_reviews desc,
+                    r.provider_id asc
            limit 1
         ) w
       on conflict do nothing;
@@ -943,6 +978,16 @@ $$;
 -- provider_id, which is why a win belongs to the *game* and not to one
 -- person's copy of it: everyone who owns it sees the trophy.
 -- ------------------------------------------------------------------
+-- `create or replace` cannot change a function's return type, and this one
+-- gained a `direction` column. Postgres wants the old one gone first, so it
+-- is dropped explicitly rather than replaced.
+--
+-- Safe to do on a live database: nothing in SQL depends on this function -
+-- it is only ever reached as an RPC from the app - and the grants it needs
+-- are re-applied further down this same file, on this same run. Any future
+-- edit that adds or removes an OUT column here needs the same treatment.
+drop function if exists public.get_award_trophies();
+
 create or replace function public.get_award_trophies()
 returns table (
   provider     text,
@@ -951,7 +996,8 @@ returns table (
   year         int,
   category_key text,
   label        text,
-  kind         text
+  kind         text,
+  direction    text
 )
 language sql
 security definer
@@ -965,7 +1011,17 @@ as $$
              where s2.id = w.season_id and c ->> 'key' = w.category_key),
            w.category_key
          ) as label,
-         w.kind
+         w.kind,
+         -- So the board can tell a trophy from a wooden spoon. Seasons
+         -- created before `direction` existed have no such key, and
+         -- coalesce reads them as what they were: all 'best'.
+         coalesce(
+           (select c ->> 'direction'
+              from public.award_seasons s3,
+                   jsonb_array_elements(s3.categories) c
+             where s3.id = w.season_id and c ->> 'key' = w.category_key),
+           'best'
+         ) as direction
     from public.award_winners w
     join public.award_seasons s on s.id = w.season_id
    where now() >= s.results_published_at
@@ -1084,3 +1140,41 @@ grant execute on function public.get_award_ballot_log(uuid)              to auth
 
 -- ensure_award_season is only ever called from get_award_season, which is
 -- itself SECURITY DEFINER - no client needs to reach it directly.
+
+
+-- ------------------------------------------------------------------
+-- 13. Refresh categories on seasons that have not started voting
+--
+-- A season snapshots its category list into `award_seasons.categories` the
+-- moment it is created, so adding a category above does nothing for a
+-- season that already exists. This re-reads the defaults into any season
+-- that has not opened voting yet.
+--
+-- The `now() < voting_open_at` guard is the whole point: once a ballot has
+-- been cast, the category list is what people voted on and changing it
+-- would silently rewrite the question after the answers came in. Seasons
+-- already in voting keep the categories they started with and pick the new
+-- award up next year.
+-- ------------------------------------------------------------------
+update public.award_seasons s
+   set categories = (
+     select coalesce(
+              jsonb_agg(
+                jsonb_build_object(
+                  'key', d.key,
+                  'label', d.label,
+                  'basis', d.basis,
+                  'basis_years', d.basis_years,
+                  'computed_key', d.computed_key,
+                  'requires_mode', d.requires_mode,
+                  'blurb', d.blurb,
+                  'direction', d.direction
+                )
+                order by d.sort_order
+              ),
+              '[]'::jsonb
+            )
+       from public.award_category_defaults d
+      where d.library_key = s.library_key
+   )
+ where now() < s.voting_open_at;

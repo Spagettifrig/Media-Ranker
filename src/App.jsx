@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AddFromCatalog from './components/AddFromCatalog.jsx';
+import AccountView from './components/AccountView.jsx';
 import AwardsView from './components/AwardsView.jsx';
 import BoardView from './components/BoardView.jsx';
 import CompareView from './components/CompareView.jsx';
 import DetailView from './components/DetailView.jsx';
 import FilterBar from './components/FilterBar.jsx';
+import FriendsView from './components/FriendsView.jsx';
 import ProfileView from './components/ProfileView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import Sidebar from './components/Sidebar.jsx';
@@ -117,12 +119,16 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [showSettings, setShowSettings] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [toast, setToast] = useState(null);
   const [user, setUser] = useState(null); // null = signed out; never written to data.json
   const [authResolved, setAuthResolved] = useState(false);
   const [profile, setProfile] = useState(null); // {username, displayName, defaultVisibility} or null
   const [profileTarget, setProfileTarget] = useState(null); // {id, displayName} or null - opens ProfileView
+  const [showFriends, setShowFriends] = useState(false);
+  // Just the badge on the sidebar; the sheet owns the lists themselves.
+  const [friendRequests, setFriendRequests] = useState(0);
 
   const pendingReviewPushes = useRef(new Set());
 
@@ -218,10 +224,17 @@ export default function App() {
     let cancelled = false;
     if (!user) {
       setProfile(null);
+      setFriendRequests(0);
       return undefined;
     }
     window.api.getProfile().then((response) => {
       if (!cancelled && response?.ok) setProfile(response.profile);
+    });
+    // Only the count, so the sidebar can show a badge without the Friends
+    // sheet having been opened. Quiet on failure: a missing badge is not
+    // worth a toast on launch, and the sheet reports the real error.
+    window.api.fetchFriends().then((response) => {
+      if (!cancelled && response?.ok) setFriendRequests(response.incoming?.length ?? 0);
     });
     return () => {
       cancelled = true;
@@ -335,6 +348,20 @@ export default function App() {
     }
   }, []);
 
+  /**
+   * Unlike default visibility this is *not* applied optimistically: the name
+   * can be refused (taken, or the wrong shape), and showing someone a
+   * username they did not get would be worse than a moment's delay.
+   * Returns the result so the field can report it inline.
+   */
+  const updateUsername = useCallback(async (value) => {
+    const response = await window.api.updateUsername(value);
+    if (response?.ok) {
+      setProfile((prev) => (prev ? { ...prev, username: response.username } : prev));
+    }
+    return response;
+  }, []);
+
   /* ---- load: once auth is known, and again whenever the account changes */
   useEffect(() => {
     if (!authResolved) return undefined;
@@ -378,7 +405,7 @@ export default function App() {
       }
       if (cancelled) return;
 
-      if (saved?.settings?.theme === 'light' || saved?.settings?.theme === 'dark') {
+      if (['light', 'dark', 'black'].includes(saved?.settings?.theme)) {
         setTheme(saved.settings.theme);
       }
       if (saved?.settings?.coverAspect) {
@@ -897,6 +924,9 @@ export default function App() {
         counts={counts}
         onLibraryChange={setLibrary}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenAccount={() => setShowAccount(true)}
+        onOpenFriends={() => setShowFriends(true)}
+        friendRequestCount={friendRequests}
         user={user}
       />
       {showSettings ? (
@@ -909,12 +939,6 @@ export default function App() {
           onCredentialChange={(key, value) =>
             setCredentials((prev) => ({ ...prev, [key]: value }))
           }
-          user={user}
-          onSignUp={signUp}
-          onSignIn={signIn}
-          onSignOut={signOut}
-          profile={profile}
-          onDefaultVisibilityChange={updateDefaultVisibility}
           appVersion={appVersion}
           updateStatus={updateStatus}
           onCheckForUpdates={checkForUpdates}
@@ -922,8 +946,27 @@ export default function App() {
           onClose={() => setShowSettings(false)}
         />
       ) : null}
+      {showAccount ? (
+        <AccountView
+          user={user}
+          onSignUp={signUp}
+          onSignIn={signIn}
+          onSignOut={signOut}
+          profile={profile}
+          onDefaultVisibilityChange={updateDefaultVisibility}
+          onUsernameChange={updateUsername}
+          onClose={() => setShowAccount(false)}
+        />
+      ) : null}
       {profileTarget ? (
         <ProfileView target={profileTarget} onClose={() => setProfileTarget(null)} />
+      ) : null}
+      {showFriends ? (
+        <FriendsView
+          onClose={() => setShowFriends(false)}
+          onOpenProfile={setProfileTarget}
+          onFriendsChanged={(lists) => setFriendRequests(lists.incoming?.length ?? 0)}
+        />
       ) : null}
       {showCatalog ? (
         <AddFromCatalog

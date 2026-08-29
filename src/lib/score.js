@@ -15,6 +15,14 @@ export const SCORE_BANDS = [
   { min: 0, max: 19, name: 'Black', color: '#0B0B0D', ink: '#E8EAED' },
 ];
 
+/**
+ * A perfect score is its own band, not the top of "Dark green" - it is what a
+ * gold trophy looks like on a slider. Kept out of SCORE_BANDS itself so the
+ * 90-100 bucket in the Stats distribution chart still reads as one band; only
+ * scoreBand() special-cases the exact value.
+ */
+export const GOLD_BAND = { min: 100, max: 100, name: 'Gold', color: '#E8B84B', ink: '#241900' };
+
 export const MIN_SCORE = 1;
 export const MAX_SCORE = 100;
 
@@ -24,9 +32,15 @@ export function clampScore(value) {
   return Math.min(MAX_SCORE, Math.max(MIN_SCORE, n));
 }
 
+/** A perfect score - the one case a slider or badge renders gold. */
+export function isGoldScore(value) {
+  return clampScore(value) === MAX_SCORE;
+}
+
 /** Returns the band descriptor { color, ink, name } for a score. */
 export function scoreBand(value) {
   const n = clampScore(value);
+  if (n === MAX_SCORE) return GOLD_BAND;
   return SCORE_BANDS.find((band) => n >= band.min && n <= band.max) ?? SCORE_BANDS[SCORE_BANDS.length - 1];
 }
 

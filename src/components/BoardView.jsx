@@ -20,7 +20,7 @@ import ConfirmDialog from './ConfirmDialog.jsx';
 import ContextMenu from './ContextMenu.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
 import TrophyBadge from './TrophyBadge.jsx';
-import { ordinal } from '../lib/score.js';
+import { isGoldScore, ordinal } from '../lib/score.js';
 import { genreLabels } from '../lib/media.js';
 import { trophiesFor } from '../lib/awards.js';
 
@@ -614,10 +614,11 @@ function CardBody({ item, config, trophies, position }) {
   const src = item.mainImage ? window.api.imageUrl(item.mainImage) : null;
   const genres = genreLabels(config, item.genres);
   const won = trophiesFor(trophies, item);
+  const isGold = isGoldScore(item.overallScore);
 
   return (
     <>
-      <div className="card__frame">
+      <div className={`card__frame${isGold ? ' card__frame--gold' : ''}`}>
         {src ? (
           <img className="card__image" src={src} alt="" draggable={false} />
         ) : (

@@ -45,6 +45,36 @@
   color-scheme: dark;
 }
 
+/*
+ * True black - an OLED-friendly variant of dark. Only the surfaces move: text,
+ * accent, danger and the rest are inherited straight from the plain `:root`
+ * block above, since nothing about the palette's *meaning* changes, just how
+ * dark its neutrals go.
+ */
+:root[data-theme='black'] {
+  --bg: #000000;
+  --surface: #0a0a0c;
+  --surface-2: #121316;
+  --surface-3: #1a1c20;
+  --line: #232529;
+  --line-soft: #17181b;
+  --text-dim: #9a9ea8;
+  --text-faint: #63666c;
+
+  --strip-bg: rgba(0, 0, 0, 0.94);
+  --sidebar-bg: #000000;
+  --scrollbar: #202226;
+  --scrollbar-hover: #2c2f34;
+  --placeholder: #55585f;
+  --scrim: rgba(0, 0, 0, 0.7);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.5), 0 14px 34px rgba(0, 0, 0, 0.55);
+  --shadow-lift: 0 6px 14px rgba(0, 0, 0, 0.6), 0 26px 60px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
 :root[data-theme='light'] {
   --bg: #f4f6fa;
   --surface: #ffffff;
@@ -314,6 +344,13 @@ kbd {
   color: var(--text-faint);
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* Pending friend requests: a count that wants answering, unlike the library
+   counts next to it, which are just facts. */
+.sidebar__count--alert {
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .sidebar__item.is-active .sidebar__count {
@@ -703,10 +740,15 @@ kbd {
   white-space: nowrap;
 }
 
-.select__input {
+/* The dropdown trigger - a plain button standing in for the old `<select>`,
+ * so the popup it opens can be fully styled (see .dropdown__menu below). */
+.select__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 9px 4px 9px 0;
+  padding: 9px 0;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -716,13 +758,93 @@ kbd {
   cursor: pointer;
 }
 
-.select__input:focus {
+.select__trigger:focus-visible {
   outline: none;
 }
 
-.select__input option {
-  background: var(--surface);
+.select__trigger[aria-expanded='true'] {
+  color: var(--accent);
+}
+
+.select__trigger-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.dropdown__caret {
+  flex: none;
+  color: var(--text-faint);
+  transition: transform 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+.select__trigger[aria-expanded='true'] .dropdown__caret {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+/* The popup itself - portaled to <body>, so it needs its own position and
+ * layering, but otherwise matches `.ctx` (the right-click menu) so every
+ * floating list in the app reads as the same component. */
+.dropdown__menu {
+  position: fixed;
+  z-index: 100;
+  overflow-y: auto;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lift);
+  list-style: none;
+  animation: ctx-in 0.12s var(--ease);
+}
+
+.dropdown__menu:focus {
+  outline: none;
+}
+
+.dropdown__option {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.dropdown__option.is-active {
+  background: var(--surface-3);
   color: var(--text);
+}
+
+.dropdown__option.is-selected {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.dropdown__option.is-selected.is-active {
+  color: var(--accent);
+}
+
+.dropdown__option:disabled {
+  cursor: default;
+  opacity: 0.4;
+  background: transparent;
+  color: var(--text-dim);
 }
 
 .filters__panel {
@@ -1005,6 +1127,33 @@ kbd {
 
 .card--selected .card__title {
   color: var(--text);
+}
+
+/* A perfect (100) overall score - the same gold used for the score badge and
+ * category sliders at 100, echoed as a glow around the cover/stage art.
+ * Specificity is bumped to match (and follow) the hover/selected rules above,
+ * so a gold card does not just lose its glow the moment it is hovered.
+ */
+/* `.card `/`.stage ` prefixes aren't structural - they exist purely to
+ * out-specificity the base `.card__frame` / `.stage__frame` rules below,
+ * which are declared later in the file and would otherwise win the cascade
+ * on equal specificity and cancel this out. */
+.card .card__frame--gold,
+.stage .stage__frame--gold {
+  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent),
+    0 0 26px color-mix(in srgb, var(--gold) 32%, transparent);
+}
+
+.card:hover .card__frame--gold {
+  box-shadow: var(--shadow-lift), 0 0 0 1px color-mix(in srgb, var(--gold) 55%, transparent),
+    0 0 30px color-mix(in srgb, var(--gold) 40%, transparent);
+}
+
+.card--selected .card__frame--gold {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lift), 0 0 0 2px var(--accent-soft),
+    0 0 22px color-mix(in srgb, var(--gold) 30%, transparent);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1750,7 +1899,8 @@ kbd {
 }
 
 /* Chromium's date/number widgets need coaxing to match the surface. */
-:root[data-theme='dark'] .field__input::-webkit-calendar-picker-indicator {
+:root[data-theme='dark'] .field__input::-webkit-calendar-picker-indicator,
+:root[data-theme='black'] .field__input::-webkit-calendar-picker-indicator {
   filter: invert(0.72);
 }
 
@@ -2859,6 +3009,118 @@ kbd {
   margin-top: 18px;
 }
 
+.settings__username {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.settings__username .field {
+  width: 190px;
+}
+
+/* The "@" is part of the field, not of the value - it is never typed and
+   never saved, it just says what kind of name this is. */
+.field__prefix {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ *
+ * People (friends, requests, search hits)
+ * ------------------------------------------------------------------ */
+.people {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.people__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+
+/* The whole name block opens the profile, so the hit area is the row's
+   identity rather than a separate "view" link. */
+.people__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.people__avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.people__text {
+  display: grid;
+  min-width: 0;
+}
+
+.people__name {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__identity:hover .people__name {
+  color: var(--accent);
+}
+
+.people__username {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* "Friends" / "Requested" - a state, not a button, so it must not look like one. */
+.people__note {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-faint);
+  padding-right: 4px;
+}
+
 .settings__account-actions {
   display: flex;
   align-items: center;
@@ -2941,6 +3203,13 @@ kbd {
   border: 1px solid var(--line-soft);
 }
 
+/* Grid children stretch by default, which would make "Read more" a
+   full-width bar rather than a button. */
+.community__card > .btn,
+.profile__review > .btn {
+  justify-self: start;
+}
+
 .community__card-head,
 .profile__review-head {
   display: flex;
@@ -2978,16 +3247,25 @@ kbd {
 
 .profile__review-title {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 13.5px;
   font-weight: 650;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.profile__review-library {
-  margin: 2px 0 0;
-  font-size: 11.5px;
-  color: var(--text-faint);
+/* Three children in the header (Back / title / Close) instead of the usual
+   two, so the title is the one that has to give way. */
+.sheet__head h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 
 .profile__summary {
   display: flex;
@@ -2995,6 +3273,79 @@ kbd {
   gap: 16px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--line-soft);
+}
+
+.profile__identity {
+  min-width: 0;
+}
+
+.profile__name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.profile__username {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+/* Three headline numbers, evenly weighted - no single one is the "main"
+   stat, so they get equal columns rather than a hierarchy. */
+.profile__statgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.profile__section {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.profile__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile__section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.profile__section-meta {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* The position within this library's top three, not the owner's rank. */
+.profile__rank {
+  flex: none;
+  width: 18px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile__review-art {
+  flex: none;
+  width: 32px;
+  height: 43px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: var(--surface-3);
 }
 
 .profile__avatar {
@@ -3011,23 +3362,35 @@ kbd {
   color: var(--text-dim);
 }
 
-.profile__stats {
-  display: flex;
-  gap: 24px;
-}
-
 .profile__stat {
-  margin: 0;
-  font-size: 12.5px;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  font-size: 12px;
   color: var(--text-faint);
+  min-width: 0;
 }
 
 .profile__stat strong {
-  display: block;
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* A title can be long ("highest — The Legend of Zelda: ..."), and the tile
+   is one of three in a fixed grid - so it wraps to two lines and then
+   truncates rather than stretching its column. */
+.profile__stat span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 @media (max-width: 720px) {
@@ -3124,6 +3487,14 @@ kbd {
   border-color: color-mix(in srgb, var(--silver) 30%, transparent);
 }
 
+/* Wins the other way round. Overrides whichever of --community/--critics
+   is also on the element, so it has to come after both. */
+.trophy--worst {
+  color: var(--text-faint);
+  background: var(--surface-3);
+  border-color: var(--line);
+}
+
 .trophies--lg .trophy {
   width: 26px;
   height: 26px;
@@ -3168,6 +3539,12 @@ kbd {
 .detail__trophy--critics {
   color: var(--silver);
   background: var(--silver-soft);
+}
+
+/* Same override rule as .trophy--worst: must follow both kind variants. */
+.detail__trophy--worst {
+  color: var(--text-faint);
+  background: var(--surface-3);
 }
 
 /* ------------------------------------------------------------------ *

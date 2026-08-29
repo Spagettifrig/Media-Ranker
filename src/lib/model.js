@@ -143,6 +143,26 @@ export function createItem(
   };
 }
 
+/**
+ * Categories a library gained *after* this item was last saved.
+ *
+ * They come back marked N/A rather than scored, because the alternative is
+ * worse than it looks: a missing score falls back to the 50 default, which
+ * drags the item's overall average down and silently reorders a board the
+ * user never touched. Adding "Feel" to Movies turns a straight-90 film into
+ * an 83 that way. N/A is what the app already means by "this category is not
+ * an opinion about this item", and it leaves the overall exactly where the
+ * user left it until they choose to score the new category themselves.
+ *
+ * An item with no saved scores at all is brand new, not old, so nothing has
+ * been "added since" for it.
+ */
+function categoriesAddedSince(raw, categories) {
+  const saved = raw?.categoryScores;
+  if (!saved || typeof saved !== 'object' || Object.keys(saved).length === 0) return [];
+  return categories.filter((category) => !(category.key in saved)).map((category) => category.key);
+}
+
 /** Defensive read of anything that came off disk. */
 export function normalizeItem(libraryKey, raw, index) {
   const config = libraryConfig(libraryKey);
@@ -166,7 +186,13 @@ export function normalizeItem(libraryKey, raw, index) {
     ? raw.galleryImages.filter((n) => typeof n === 'string' && n)
     : [];
 
-  const disabledCategories = normalizeTags(raw?.disabledCategories, config.categories);
+  const disabledCategories = normalizeTags(
+    [
+      ...(Array.isArray(raw?.disabledCategories) ? raw.disabledCategories : []),
+      ...categoriesAddedSince(raw, config.categories),
+    ],
+    config.categories,
+  );
 
   return {
     id: typeof raw?.id === 'string' && raw.id ? raw.id : base.id,

@@ -4,7 +4,16 @@ import { LIBRARIES } from '../lib/media.js';
  * The rail down the left: which library you are ranking, plus the settings
  * that apply to the whole app.
  */
-export default function Sidebar({ library, counts, onLibraryChange, onOpenSettings, user }) {
+export default function Sidebar({
+  library,
+  counts,
+  onLibraryChange,
+  onOpenSettings,
+  onOpenAccount,
+  onOpenFriends,
+  friendRequestCount = 0,
+  user,
+}) {
   function handleKeyDown(event) {
     const delta = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
     if (delta === 0) return;
@@ -48,8 +57,8 @@ export default function Sidebar({ library, counts, onLibraryChange, onOpenSettin
         <button
           type="button"
           className="sidebar__tool"
-          onClick={onOpenSettings}
-          title={user ? `Signed in as ${user.email}` : 'Not signed in'}
+          onClick={onOpenAccount}
+          title={user ? `Signed in as ${user.email}` : 'Sign in or create an account'}
         >
           <span
             className={`sidebar__account-dot${user ? ' is-on' : ''}`}
@@ -57,6 +66,24 @@ export default function Sidebar({ library, counts, onLibraryChange, onOpenSettin
           />
           <span className="sidebar__label">{user ? user.email : 'Not signed in'}</span>
         </button>
+        {/* Signed out there is nobody to be friends with, and the sheet
+            would only be able to say so - so it isn't offered at all. */}
+        {user ? (
+          <button
+            type="button"
+            className="sidebar__tool"
+            onClick={onOpenFriends}
+            title="Friends"
+          >
+            <span className="sidebar__icon" aria-hidden="true">
+              <FriendsIcon />
+            </span>
+            <span className="sidebar__label">Friends</span>
+            {friendRequestCount > 0 ? (
+              <span className="sidebar__count sidebar__count--alert">{friendRequestCount}</span>
+            ) : null}
+          </button>
+        ) : null}
         <button
           type="button"
           className="sidebar__tool"
@@ -125,6 +152,21 @@ function TvIcon() {
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FriendsIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="9" cy="8.4" r="3.4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3.2 19.2a5.8 5.8 0 0 1 11.6 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path
+        d="M16.4 5.4a3.4 3.4 0 0 1 0 6M18 13.7a5.8 5.8 0 0 1 2.8 4.9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
       />
     </svg>
   );

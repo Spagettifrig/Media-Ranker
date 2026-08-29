@@ -106,12 +106,6 @@ export default function SettingsView({
   onCoverAspectChange,
   credentials,
   onCredentialChange,
-  user,
-  onSignUp,
-  onSignIn,
-  onSignOut,
-  profile,
-  onDefaultVisibilityChange,
   appVersion,
   updateStatus,
   onCheckForUpdates,
@@ -150,7 +144,7 @@ export default function SettingsView({
             <div className="settings__row">
               <div>
                 <p className="settings__row-title">Theme</p>
-                <p className="settings__row-desc">Switch the whole app between dark and light.</p>
+                <p className="settings__row-desc">Switch the whole app between dark, light and true black.</p>
               </div>
               <div className="segmented" role="radiogroup" aria-label="Theme">
                 <button
@@ -162,6 +156,16 @@ export default function SettingsView({
                 >
                   <MoonIcon />
                   Dark
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === 'black'}
+                  className={`segmented__item${theme === 'black' ? ' is-on' : ''}`}
+                  onClick={() => onThemeChange('black')}
+                >
+                  <BlackIcon />
+                  True black
                 </button>
                 <button
                   type="button"
@@ -258,15 +262,6 @@ export default function SettingsView({
             </div>
           </section>
 
-          <AccountSection
-            user={user}
-            onSignUp={onSignUp}
-            onSignIn={onSignIn}
-            onSignOut={onSignOut}
-            profile={profile}
-            onDefaultVisibilityChange={onDefaultVisibilityChange}
-          />
-
           <UpdateSection
             appVersion={appVersion}
             updateStatus={updateStatus}
@@ -324,138 +319,6 @@ export default function SettingsView({
   );
 }
 
-/**
- * Signing in is entirely optional - staying signed out is the same fully
- * offline app as before. Email+password only for now, so there is no
- * browser hop to bounce back into the desktop window from.
- */
-function AccountSection({ user, onSignUp, onSignIn, onSignOut, profile, onDefaultVisibilityChange }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState(null);
-
-  async function submit(action) {
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    const run = action === 'signUp' ? onSignUp : onSignIn;
-    const failure = await run(email, password);
-    setPending(false);
-    if (failure) setError(failure);
-  }
-
-  if (user) {
-    const defaultVisibility = profile?.defaultVisibility ?? 'private';
-    return (
-      <section className="settings__section">
-        <h3 className="keys__title">Account</h3>
-        <div className="settings__row">
-          <div>
-            <p className="settings__row-title">Signed in as {user.email}</p>
-            <p className="settings__row-desc">
-              Your rankings sync to your account. Signing out returns to fully local
-              mode — nothing already on this device is deleted.
-            </p>
-          </div>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-
-        <div className="settings__row">
-          <div>
-            <p className="settings__row-title">Default review visibility</p>
-            <p className="settings__row-desc">
-              Whether a new review is visible to other users by default. Any single
-              review can still be overridden from its own page — see it there as
-              Inherit / Public / Private.
-            </p>
-          </div>
-          <div className="segmented" role="radiogroup" aria-label="Default review visibility">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={defaultVisibility === 'private'}
-              className={`segmented__item${defaultVisibility === 'private' ? ' is-on' : ''}`}
-              onClick={() => onDefaultVisibilityChange('private')}
-            >
-              Private
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={defaultVisibility === 'public'}
-              className={`segmented__item${defaultVisibility === 'public' ? ' is-on' : ''}`}
-              onClick={() => onDefaultVisibilityChange('public')}
-            >
-              Public
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="settings__section">
-      <h3 className="keys__title">Account</h3>
-      <p className="settings__row-desc">
-        Sign in to sync your rankings across devices. Staying signed out keeps the app
-        exactly as it works today — fully offline, nothing sent anywhere.
-      </p>
-
-      <div className="settings__creds">
-        <label className="field">
-          <span className="field__label">Email</span>
-          <span className="field__control">
-            <input
-              type="email"
-              className="field__input"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              spellCheck="false"
-            />
-          </span>
-        </label>
-        <label className="field">
-          <span className="field__label">Password</span>
-          <span className="field__control">
-            <input
-              type="password"
-              className="field__input"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-            />
-          </span>
-        </label>
-      </div>
-
-      {error ? <p className="field__hint field__hint--error">{error}</p> : null}
-
-      <div className="settings__account-actions">
-        <button
-          type="button"
-          className="btn btn--ghost btn--sm"
-          disabled={pending || !email || !password}
-          onClick={() => submit('signIn')}
-        >
-          Sign in
-        </button>
-        <button
-          type="button"
-          className="btn btn--primary btn--sm"
-          disabled={pending || !email || !password}
-          onClick={() => submit('signUp')}
-        >
-          Sign up
-        </button>
-      </div>
-    </section>
-  );
-}
 
 /**
  * The app already checks for updates on its own - at launch and every four
@@ -543,6 +406,16 @@ function MoonIcon() {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** A filled disc, half-cut - distinct from the outlined moon, and reads as "solid black" at a glance. */
+function BlackIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 3.6a8.4 8.4 0 0 1 0 16.8Z" fill="currentColor" />
     </svg>
   );
 }

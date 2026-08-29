@@ -21,10 +21,11 @@ const MOVIE_CATEGORIES = [
   { key: 'music', label: 'Music' },
   { key: 'visuals', label: 'Visuals' },
   { key: 'pacing', label: 'Pacing' },
+  { key: 'feel', label: 'Feel' },
 ];
 
 /**
- * Same five axes a film is judged on, plus the one thing only a series can
+ * Same six axes a film is judged on, plus the one thing only a series can
  * get wrong: holding its quality across a run of episodes.
  */
 const SERIES_CATEGORIES = [
@@ -33,6 +34,7 @@ const SERIES_CATEGORIES = [
   { key: 'music', label: 'Music' },
   { key: 'visuals', label: 'Visuals' },
   { key: 'pacing', label: 'Pacing' },
+  { key: 'feel', label: 'Feel' },
   { key: 'consistency', label: 'Consistency' },
 ];
 
@@ -242,6 +244,7 @@ export const LIBRARIES = [
       { key: 'music', label: 'Music', placeholder: 'Score, songs, sound design...' },
       { key: 'visuals', label: 'Visuals', placeholder: 'Cinematography, effects, production design...' },
       { key: 'pacing', label: 'Pacing', placeholder: 'Runtime, momentum, where it drags...' },
+      { key: 'feel', label: 'Feel', placeholder: 'Tone, atmosphere, how it sat with you...' },
     ],
     genres: genres(
       'Horror',
@@ -318,6 +321,7 @@ export const LIBRARIES = [
       { key: 'music', label: 'Music', placeholder: 'Score, theme, sound design...' },
       { key: 'visuals', label: 'Visuals', placeholder: 'Cinematography, effects, production design...' },
       { key: 'pacing', label: 'Pacing', placeholder: 'Episode length, momentum, where it drags...' },
+      { key: 'feel', label: 'Feel', placeholder: 'Tone, atmosphere, how it sat with you...' },
       {
         key: 'consistency',
         label: 'Consistency',

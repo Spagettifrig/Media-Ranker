@@ -22,13 +22,25 @@ export default function TrophyBadge({ trophies, size = 'sm' }) {
       {shown.map((trophy) => (
         <span
           key={`${trophy.year}-${trophy.categoryKey}-${trophy.kind}`}
-          className={`trophy trophy--${trophy.kind}`}
+          className={`trophy trophy--${trophy.kind}${trophy.direction === 'worst' ? ' trophy--worst' : ''}`}
         >
-          <TrophyIcon />
+          {/* Worst of the Year is still a win, but a gold cup on the board
+              would read as praise - so it gets its own mark. */}
+          {trophy.direction === 'worst' ? <SpoonIcon /> : <TrophyIcon />}
         </span>
       ))}
       {extra > 0 ? <span className="trophy__more">+{extra}</span> : null}
     </span>
+  );
+}
+
+/** The wooden spoon: what Worst of the Year carries instead of a cup. */
+export function SpoonIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <ellipse cx="8" cy="4.6" rx="3.1" ry="3.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 8v5.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 

@@ -48,7 +48,8 @@ async function request(url, { method = 'GET', headers, body, provider }) {
  * IGDB (games) - authenticated through Twitch
  * ------------------------------------------------------------------ */
 const IGDB_FIELDS =
-  'fields name,cover.image_id,first_release_date,genres.name,themes.name,game_modes.id,summary;';
+  'fields name,cover.image_id,first_release_date,genres.name,themes.name,game_modes.id,summary,' +
+  'total_rating_count;';
 
 /**
  * App access tokens last ~60 days, so one is cached for the life of the
@@ -56,6 +57,58 @@ const IGDB_FIELDS =
  * secret in Settings has to invalidate the old token, not keep using it.
  */
 let tokenCache = { value: null, key: '', expiresAt: 0 };
+
+/**
+ * Deliberately larger than the number of results actually shown
+ * (SEARCH_DISPLAY_LIMIT): plenty of IGDB rows have no cover and get filtered
+ * out, so asking for exactly what we want to show would leave a short list.
+ * IGDB's own ceiling is 500.
+ */
+const IGDB_SEARCH_LIMIT = 100;
+
+/**
+ * The rows that are a game somebody would put on a board, rather than another
+ * way of buying one they already have. `version_parent` catches the editions
+ * ("Gold Edition", "The Final Cut Bundle"); `game_type` catches the rest -
+ * keeping main games (0), standalone expansions (4), remakes (8), remasters
+ * (9) and expanded editions (10), and dropping DLC, bundles, packs, season
+ * passes, mods, episodes, ports and updates. Without it a search for Disco
+ * Elysium returns six rows for what is really two games.
+ *
+ * `cover != null` is the same rule the results are filtered by anyway (see
+ * search below), applied server-side so the row budget is not spent on
+ * entries that could never be shown.
+ */
+const IGDB_REAL_GAMES = 'version_parent = null & game_type = (0,4,8,9,10) & cover != null';
+
+/**
+ * A name-contains clause for when IGDB's own search comes up short, which is
+ * what happens to a misspelling: "Ninecraft" and "World Box" both return
+ * nothing useful, because the search index matches words, not near-words.
+ *
+ * The needles are cheap guesses at what the user meant to type - the query
+ * with its spaces closed up ("worldbox" finds WorldBox), and with the first
+ * or last character dropped, so a typo at either end still leaves a long
+ * enough run to match on ("inecraft" finds Minecraft). The five-character
+ * prefix covers a typo in the middle; it matches broadly on purpose, and
+ * ranking is what sorts the result out afterwards.
+ *
+ * Returns null when the query is too short for any of this to be anything but
+ * noise. Needles are normalised to [a-z0-9], so they need no escaping.
+ */
+function igdbSpellingClause(query) {
+  const compact = compactTitle(normaliseTitle(query));
+  if (compact.length < 4) return null;
+
+  const needles = new Set([compact]);
+  if (compact.length >= 5) {
+    needles.add(compact.slice(1));
+    needles.add(compact.slice(0, -1));
+  }
+  if (compact.length >= 7) needles.add(compact.slice(0, 5));
+
+  return [...needles].map((needle) => `name ~ *"${needle}"*`).join(' | ');
+}
 
 async function igdbToken({ twitchClientId, twitchClientSecret }) {
   const key = `${twitchClientId}:${twitchClientSecret}`;
@@ -120,6 +173,8 @@ function fromIgdb(game) {
       ...(game.themes ?? []).map((theme) => theme?.name),
     ].filter(Boolean),
     modeIds: (game.game_modes ?? []).map((mode) => mode?.id).filter(Number.isFinite),
+    // How many people rated it, used only to break ranking ties - see rank().
+    popularity: Number(game.total_rating_count) || 0,
     // Deliberately null: "hours played" is the user's own log, not a fact
     // about the game, so the database has no business filling it in.
     hours: null,
@@ -159,6 +214,7 @@ function fromTmdb(movie) {
     genreIds: Array.isArray(movie.genre_ids)
       ? movie.genre_ids
       : (movie.genres ?? []).map((genre) => genre?.id).filter(Number.isFinite),
+    popularity: Number(movie.vote_count) || 0,
     // Unlike playtime, a runtime *is* a fact about the film, so fill it in.
     hours: Number.isFinite(runtime) && runtime > 0 ? Math.round((runtime / 60) * 10) / 10 : null,
   };
@@ -196,6 +252,7 @@ function fromTmdbTv(show) {
     genreIds: Array.isArray(show.genre_ids)
       ? show.genre_ids
       : (show.genres ?? []).map((genre) => genre?.id).filter(Number.isFinite),
+    popularity: Number(show.vote_count) || 0,
     hours: totalHours,
   };
 }
@@ -222,6 +279,159 @@ function chunked(values, size) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Relevance ranking
+ *
+ * Providers rank by their own idea of relevance, which is good but not
+ * title-aware enough: an exact title can land below a sequel, and a typo
+ * ("Ninecraft") can bury the game the user obviously meant. So results are
+ * re-ordered here, on the title alone, before the UI ever sees them.
+ * ------------------------------------------------------------------ */
+
+/** How many results the UI is shown. */
+const SEARCH_DISPLAY_LIMIT = 50;
+
+/**
+ * The score at or above which a result is the thing the user typed, rather
+ * than something that merely resembles it - an exact title, or one spaced
+ * differently. Providers that can search twice use it to decide whether the
+ * second search is worth making.
+ */
+const STRONG_MATCH = 900;
+
+/**
+ * Titles are compared with punctuation, case and accents flattened away, so
+ * "Marvel's Spider-Man" and "marvel spider man" are the same string.
+ */
+function normaliseTitle(value) {
+  return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** Word breaks dropped entirely, so "World Box" and "WorldBox" match. */
+const compactTitle = (value) => value.replace(/ /g, '');
+
+/**
+ * Edit distance, counting a swap of two neighbouring letters as one mistake
+ * rather than two - "Minecarft" is one slip away from "Minecraft", and plain
+ * Levenshtein would score it as far off as a genuinely different word.
+ * Titles are short, so the full matrix is cheap.
+ */
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  let beforePrevious = [];
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      let best = Math.min(
+        previous[j] + 1, // deletion
+        current[j - 1] + 1, // insertion
+        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1), // substitution
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        best = Math.min(best, beforePrevious[j - 2] + 1); // transposition
+      }
+      current[j] = best;
+    }
+    beforePrevious = previous;
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+/** 0 (nothing in common) to 1 (identical). */
+function similarity(a, b) {
+  const longest = Math.max(a.length, b.length);
+  return longest === 0 ? 0 : 1 - editDistance(a, b) / longest;
+}
+
+/**
+ * Capped at 90 so it only ever breaks ties *within* a tier - a shorter title
+ * wins over a longer one that matched the same way ("Minecraft" over
+ * "Minecraft Dungeons"), but never jumps a tier boundary.
+ */
+function lengthPenalty(query, title) {
+  return Math.min(90, Math.max(0, title.length - query.length));
+}
+
+/**
+ * Score one title against the query. The tiers are deliberately far apart:
+ * an exact match must beat every prefix match, a prefix match must beat every
+ * whole-word match, and anything only reachable by fuzzy matching sits below
+ * all of them - a typo is a last resort, not a reason to outrank a real match.
+ */
+function relevance(query, title) {
+  const q = normaliseTitle(query);
+  const t = normaliseTitle(title);
+  if (!q || !t) return 0;
+
+  const qc = compactTitle(q);
+  const tc = compactTitle(t);
+  const penalty = lengthPenalty(qc, tc);
+
+  if (t === q) return 1000;
+  // The same title, spaced differently: "World Box" vs "WorldBox".
+  if (tc === qc) return 900;
+  if (t.startsWith(`${q} `) || tc.startsWith(qc)) return 800 - penalty;
+  // The query as a whole word (or run of words) inside a longer title.
+  if (t.includes(` ${q} `) || t.endsWith(` ${q}`)) return 700 - penalty;
+  if (tc.includes(qc)) return 600 - penalty;
+
+  // Every word of the query present, in some other order or spread out:
+  // "Box World" for "World Box". Still a real match, just a weaker one than
+  // the same words in the same order.
+  const queryWords = q.split(' ');
+  const titleWords = new Set(t.split(' '));
+  if (queryWords.length > 1 && queryWords.every((word) => titleWords.has(word))) {
+    return 550 - penalty;
+  }
+
+  // Nothing matched literally, so fall back to how close the spelling is:
+  // "ninecraft" is one edit away from "minecraft". Individual words are
+  // compared too, slightly discounted, so a typo still finds the game when
+  // its real title carries a subtitle.
+  let best = similarity(qc, tc);
+  for (const word of t.split(' ')) {
+    best = Math.max(best, similarity(qc, word) * 0.95);
+  }
+  // Below this it is not a misspelling, it is a different word - score it
+  // zero and let the provider's own ordering decide where it lands.
+  return best >= 0.6 ? Math.round(best * 500) : 0;
+}
+
+/** The best score anything in this batch manages against the query. */
+function bestRelevance(query, results) {
+  return results.reduce((best, result) => Math.max(best, relevance(query, result.title)), 0);
+}
+
+/**
+ * Re-order by title relevance. Titles that match equally well are separated by
+ * how many people have rated them, which is what decides between the game the
+ * user meant and a shovelware title with a similar name - "Minecarft" is as
+ * close to "MineCart" as it is to "Minecraft", and only one of those is the
+ * game anybody was looking for. The provider's own order breaks any remaining
+ * tie, so nothing is reshuffled without a reason.
+ */
+function rank(query, results) {
+  return results
+    .map((result, index) => ({ result, index, score: relevance(query, result.title) }))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        (b.result.popularity ?? 0) - (a.result.popularity ?? 0) ||
+        a.index - b.index,
+    )
+    .map((entry) => entry.result);
+}
+
+/* ------------------------------------------------------------------ *
  * Providers, keyed by library
  * ------------------------------------------------------------------ */
 const PROVIDERS = {
@@ -235,7 +445,33 @@ const PROVIDERS = {
       // and backslashes is enough to keep the clause well-formed.
       const safe = query.replace(/["\\]/g, ' ').trim();
       if (!safe) return [];
-      return (await igdbQuery(credentials, `search "${safe}"; ${IGDB_FIELDS} limit 24;`)).map(fromIgdb);
+
+      const primary = (
+        await igdbQuery(
+          credentials,
+          `search "${safe}"; ${IGDB_FIELDS} where ${IGDB_REAL_GAMES}; limit ${IGDB_SEARCH_LIMIT};`,
+        )
+      ).map(fromIgdb);
+
+      // A title that matches outright is the answer; asking twice would only
+      // cost a request and a round trip. Anything less - a near miss, or
+      // nothing at all - is worth a second look for a misspelling.
+      const clause = bestRelevance(safe, primary) >= STRONG_MATCH ? null : igdbSpellingClause(safe);
+      if (!clause) return primary;
+
+      // No `search` clause here, so this one can be sorted: most-rated first,
+      // which is what makes the intended game surface out of the hundreds of
+      // titles a loose spelling guess can match.
+      const fuzzy = (
+        await igdbQuery(
+          credentials,
+          `${IGDB_FIELDS} where ${IGDB_REAL_GAMES} & (${clause}); ` +
+            `sort total_rating_count desc; limit ${IGDB_SEARCH_LIMIT};`,
+        )
+      ).map(fromIgdb);
+
+      const seen = new Set(primary.map((result) => result.remoteId));
+      return [...primary, ...fuzzy.filter((result) => !seen.has(result.remoteId))];
     },
     async detail(credentials, remoteId) {
       const id = Number(remoteId);
@@ -373,7 +609,11 @@ async function search(libraryKey, query, credentials) {
   const results = await provider.search(credentials, trimmed);
   // An entry with no art is nearly useless on a board of covers, and the
   // providers return plenty of those (demos, betas, regional duplicates).
-  return results.filter((result) => result.thumbUrl);
+  // Filter, then rank, then cut - so what gets shown is the best
+  // SEARCH_DISPLAY_LIMIT of everything that survived, rather than whatever
+  // happened to survive out of the first SEARCH_DISPLAY_LIMIT.
+  const usable = results.filter((result) => result.thumbUrl);
+  return rank(trimmed, usable).slice(0, SEARCH_DISPLAY_LIMIT);
 }
 
 async function detail(libraryKey, remoteId, credentials) {

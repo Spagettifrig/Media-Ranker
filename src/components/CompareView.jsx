@@ -1,3 +1,4 @@
+import Dropdown from './Dropdown.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
 import { TagList } from './TagChips.jsx';
 import { ordinal, scoreBand } from '../lib/score.js';
@@ -89,21 +90,14 @@ export default function CompareView({ items, config, selection, onSelect, onSwap
 
 function Picker({ items, value, exclude, label, onChange }) {
   return (
-    <label className="select select--wide">
-      <span className="select__label">{label}</span>
-      <select
-        className="select__input"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label={label}
-      >
-        {items.map((item) => (
-          <option key={item.id} value={item.id} disabled={item.id === exclude}>
-            {item.title}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Dropdown
+      label={label}
+      value={value}
+      options={items.map((item) => ({ value: item.id, label: item.title, disabled: item.id === exclude }))}
+      onChange={onChange}
+      ariaLabel={label}
+      wide
+    />
   );
 }
 

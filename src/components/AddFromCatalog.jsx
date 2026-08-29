@@ -187,7 +187,12 @@ export default function AddFromCatalog({ config, libraryKey, onAdd, onClose, onO
               onClick={() => add(result)}
               disabled={Boolean(adding)}
             >
-              <img className="catalog__art" src={result.thumbUrl} alt="" loading="lazy" />
+              <img
+                className="catalog__art"
+                src={window.api.catalogImageUrl(result.thumbUrl)}
+                alt=""
+                loading="lazy"
+              />
               <span className="catalog__meta">
                 <span className="catalog__title">
                   {result.title}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Dropdown from './Dropdown.jsx';
 import TagChips from './TagChips.jsx';
 import { SORTS, isFiltered, isReorderable } from '../lib/collection.js';
 import { hasPlatforms, platformGroups } from '../lib/media.js';
@@ -68,21 +69,13 @@ export default function FilterBar({
           ) : null}
         </div>
 
-        <label className="select">
-          <span className="select__label">Sort</span>
-          <select
-            className="select__input"
-            value={filters.sort}
-            onChange={(event) => patch({ sort: event.target.value })}
-            aria-label="Sort order"
-          >
-            {SORTS.map((sort) => (
-              <option key={sort.key} value={sort.key}>
-                {sort.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Dropdown
+          label="Sort"
+          value={filters.sort}
+          options={SORTS.map((sort) => ({ value: sort.key, label: sort.label }))}
+          onChange={(sort) => patch({ sort })}
+          ariaLabel="Sort order"
+        />
 
         <button
           type="button"

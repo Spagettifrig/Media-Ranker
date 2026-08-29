@@ -220,6 +220,9 @@ async function trophies() {
         categoryKey: row.category_key,
         label: row.label,
         kind: row.kind,
+        // 'best' | 'worst'. Absent on a database that predates the Worst
+        // of the Year categories, which is the same thing as 'best'.
+        direction: row.direction ?? 'best',
       })),
     };
   } catch (err) {

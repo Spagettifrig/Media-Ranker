@@ -180,6 +180,167 @@ async function updateProfile({ defaultVisibility }) {
   }
 }
 
+/**
+ * The same shape social.sql's `profiles_username_format` check enforces.
+ * Validated here too so a typo comes back as a sentence rather than as a
+ * constraint-violation string from Postgres.
+ */
+const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
+
+function usernameProblem(username) {
+  if (username.length < 3) return 'Usernames need at least 3 characters.';
+  if (username.length > 24) return 'Usernames can be at most 24 characters.';
+  return 'Usernames can only use lowercase letters, numbers and underscores.';
+}
+
+/**
+ * Change your own username. Lowercased on the way in rather than rejected,
+ * because "Alex" and "alex" are the same name to everyone except a database
+ * - and the unique index is on lower(username) for the same reason.
+ */
+async function updateUsername(username) {
+  try {
+    const session = await getSession();
+    const userId = session?.user?.id;
+    if (!userId) return { ok: false, error: 'Not signed in.' };
+
+    const cleaned = String(username ?? '').trim().toLowerCase();
+    if (!USERNAME_PATTERN.test(cleaned)) return { ok: false, error: usernameProblem(cleaned) };
+
+    const { error } = await getClient()
+      .from('profiles')
+      .update({ username: cleaned, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) return { ok: false, error: 'That username is taken.' };
+      return { ok: false, error: error.message };
+    }
+    return { ok: true, username: cleaned };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Friends.
+ *
+ * Every one of these is a SECURITY DEFINER function in social.sql rather
+ * than a table query, because each of them has to cross the profiles
+ * visibility boundary by definition - you cannot search for someone you
+ * have never met, or see who asked to be your friend, using only the rows
+ * you were already allowed to read. The functions return nothing but
+ * (id, username, display_name), so that boundary is crossed by exactly the
+ * width of a profile card and no further.
+ * ------------------------------------------------------------------ */
+
+/** A search hit or list entry, in the shape the renderer speaks. */
+function toPerson(row) {
+  return {
+    id: row.id,
+    username: row.username ?? '',
+    displayName: row.display_name || row.username || 'Anonymous',
+  };
+}
+
+async function searchProfiles(query) {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+
+    const trimmed = String(query ?? '').trim();
+    // Matches the function's own guard - no point spending a round trip on
+    // a query the server will refuse to run.
+    if (trimmed.length < 2) return { ok: true, results: [] };
+
+    const { data, error } = await getClient().rpc('search_profiles', { p_query: trimmed });
+    if (error) return { ok: false, error: error.message };
+    return {
+      ok: true,
+      results: (data ?? []).map((row) => ({ ...toPerson(row), friendStatus: row.friend_status })),
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+async function sendFriendRequest(targetId) {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+    const { data, error } = await getClient().rpc('send_friend_request', { p_target: targetId });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, status: data };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+async function respondFriendRequest(requesterId, accept) {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+    const { data, error } = await getClient().rpc('respond_friend_request', {
+      p_requester: requesterId,
+      p_accept: Boolean(accept),
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, status: data };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Unfriend, decline, or cancel a request you sent - all the same act, and
+ * all covered by the "leave a friendship" delete policy, so this one is a
+ * plain table write rather than an RPC. The pair is stored in one row under
+ * whichever ordering it was created with, so both orderings are deleted.
+ */
+async function removeFriend(otherId) {
+  try {
+    const session = await getSession();
+    const userId = session?.user?.id;
+    if (!userId) return { ok: false, error: 'Not signed in.' };
+
+    const { error } = await getClient()
+      .from('friendships')
+      .delete()
+      .or(
+        `and(requester_id.eq.${userId},addressee_id.eq.${otherId}),` +
+          `and(requester_id.eq.${otherId},addressee_id.eq.${userId})`,
+      );
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/** Accepted friends and both directions of pending request, in one call. */
+async function fetchFriends() {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+
+    const [friendsResult, requestsResult] = await Promise.all([
+      getClient().rpc('list_friends'),
+      getClient().rpc('list_friend_requests'),
+    ]);
+    if (friendsResult.error) return { ok: false, error: friendsResult.error.message };
+    if (requestsResult.error) return { ok: false, error: requestsResult.error.message };
+
+    const requests = requestsResult.data ?? [];
+    return {
+      ok: true,
+      friends: (friendsResult.data ?? []).map(toPerson),
+      incoming: requests.filter((row) => row.direction === 'incoming').map(toPerson),
+      outgoing: requests.filter((row) => row.direction === 'outgoing').map(toPerson),
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Auth. Every call follows the same convention as catalog.js: never throw
  * at the caller, report failure as { ok: false, error } instead.
@@ -454,7 +615,7 @@ async function fetchProfileReviews(userId) {
 
     const { data: reviews, error } = await getClient()
       .from('reviews')
-      .select('id, library_key, title, overall_score, notes, updated_at')
+      .select('id, library_key, title, overall_score, notes, cover_image_url, updated_at')
       .eq('user_id', userId)
       .is('deleted_at', null)
       .order('updated_at', { ascending: false });
@@ -463,12 +624,17 @@ async function fetchProfileReviews(userId) {
     return {
       ok: true,
       displayName: profile?.display_name ?? profile?.username ?? 'Anonymous',
+      username: profile?.username ?? '',
       reviews: (reviews ?? []).map((r) => ({
         id: r.id,
         libraryKey: r.library_key,
         title: r.title,
         overallScore: r.overall_score,
         overallNote: r.notes?.overall ?? '',
+        // The viewer has no local copy of someone else's cover, so this
+        // stays the provider's own URL and is proxied for display (see
+        // catalogImageUrl in preload.js).
+        coverImageUrl: r.cover_image_url ?? null,
       })),
     };
   } catch (err) {
@@ -491,6 +657,12 @@ module.exports = {
   ensureProfile,
   getProfile,
   updateProfile,
+  updateUsername,
+  searchProfiles,
+  sendFriendRequest,
+  respondFriendRequest,
+  removeFriend,
+  fetchFriends,
   pushReview,
   pushReviews,
   deleteReview,

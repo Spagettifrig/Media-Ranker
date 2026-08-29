@@ -5,7 +5,7 @@ import ScoreSlider from './ScoreSlider.jsx';
 import SaveIndicator from './SaveIndicator.jsx';
 import TagChips from './TagChips.jsx';
 import TrophyBadge from './TrophyBadge.jsx';
-import { ordinal } from '../lib/score.js';
+import { isGoldScore, ordinal } from '../lib/score.js';
 import { allImagesOf } from '../lib/model.js';
 import { trophiesFor, trophyTitle } from '../lib/awards.js';
 import { hasPlatforms, platformGroups } from '../lib/media.js';
@@ -243,7 +243,7 @@ export default function DetailView({
       <div className="detail__body">
         <section className="stage" aria-label="Images">
           <div
-            className="stage__frame"
+            className={`stage__frame${isGoldScore(item.overallScore) ? ' stage__frame--gold' : ''}`}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
           >
@@ -387,7 +387,9 @@ export default function DetailView({
             {won.map((trophy) => (
               <span
                 key={`${trophy.year}-${trophy.categoryKey}-${trophy.kind}`}
-                className={`detail__trophy detail__trophy--${trophy.kind}`}
+                className={`detail__trophy detail__trophy--${trophy.kind}${
+                  trophy.direction === 'worst' ? ' detail__trophy--worst' : ''
+                }`}
               >
                 {trophyTitle(trophy)}
               </span>

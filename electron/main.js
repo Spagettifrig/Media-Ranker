@@ -45,7 +45,30 @@ protocol.registerSchemesAsPrivileged([
     scheme: 'gameimg',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
+  {
+    // Catalog search results are the one place the UI shows art that has not
+    // been downloaded yet. Rather than punch the providers' CDNs through the
+    // renderer's CSP, those URLs are rewritten to this scheme and fetched
+    // here - so the renderer still makes no cross-origin request of its own.
+    scheme: 'catalogimg',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
 ]);
+
+/** The only hosts catalogimg:// will fetch from. */
+const CATALOG_IMAGE_HOSTS = new Set(['images.igdb.com', 'image.tmdb.org']);
+
+/** catalogimg://<host>/<path> -> the https URL it stands for, or null. */
+function resolveCatalogImageRequest(requestUrl) {
+  let parsed;
+  try {
+    parsed = new URL(requestUrl);
+  } catch {
+    return null;
+  }
+  if (!CATALOG_IMAGE_HOSTS.has(parsed.hostname)) return null;
+  return `https://${parsed.hostname}${parsed.pathname}${parsed.search}`;
+}
 
 function resolveImageRequest(requestUrl) {
   const parsed = new URL(requestUrl);
@@ -461,6 +484,17 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
 
+    protocol.handle('catalogimg', async (request) => {
+      const remote = resolveCatalogImageRequest(request.url);
+      if (!remote) return new Response('Not found', { status: 404 });
+      try {
+        return await net.fetch(remote);
+      } catch {
+        // Offline or a dead CDN link: the result row just shows no art.
+        return new Response('Not found', { status: 404 });
+      }
+    });
+
     registerIpc();
     createWindow();
 
@@ -734,6 +768,25 @@ function registerIpc() {
   ipcMain.handle('sync:fetchProfileReviews', async (_event, userId) =>
     supabase.fetchProfileReviews(userId),
   );
+
+  /* ---- friends --------------------------------------------------------- */
+  ipcMain.handle('sync:updateUsername', async (_event, username) =>
+    supabase.updateUsername(username),
+  );
+
+  ipcMain.handle('sync:searchProfiles', async (_event, query) => supabase.searchProfiles(query));
+
+  ipcMain.handle('sync:sendFriendRequest', async (_event, targetId) =>
+    supabase.sendFriendRequest(targetId),
+  );
+
+  ipcMain.handle('sync:respondFriendRequest', async (_event, requesterId, accept) =>
+    supabase.respondFriendRequest(requesterId, accept),
+  );
+
+  ipcMain.handle('sync:removeFriend', async (_event, otherId) => supabase.removeFriend(otherId));
+
+  ipcMain.handle('sync:fetchFriends', async () => supabase.fetchFriends());
 
   /* ---- awards ---------------------------------------------------------- */
   ipcMain.handle('awards:season', async (_event, libraryKey) => awards.getSeason(libraryKey));
