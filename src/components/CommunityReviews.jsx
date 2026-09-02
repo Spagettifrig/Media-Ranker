@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ReviewBreakdown, { firstCategoryNote, hasBreakdown } from './ReviewBreakdown.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
 import { firstSentences, isTruncated } from '../lib/social.js';
 
@@ -8,7 +9,7 @@ import { firstSentences, isTruncated } from '../lib/social.js';
  * look anyone else's copy up by - or while signed out, since there is
  * nothing to fetch on someone else's behalf without an account.
  */
-export default function CommunityReviews({ item, user, onOpenProfile }) {
+export default function CommunityReviews({ item, user, config, onOpenProfile }) {
   const eligible = Boolean(user) && Boolean(item.provider) && Boolean(item.providerId);
   const [loading, setLoading] = useState(eligible);
   const [error, setError] = useState(null);
@@ -52,16 +53,35 @@ export default function CommunityReviews({ item, user, onOpenProfile }) {
 
       <div className="community__list">
         {reviews.map((review) => (
-          <CommunityCard key={review.id} review={review} onOpenProfile={onOpenProfile} />
+          <CommunityCard
+            key={review.id}
+            review={review}
+            libraryKey={config?.key ?? null}
+            onOpenProfile={onOpenProfile}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function CommunityCard({ review, onOpenProfile }) {
+/**
+ * One person's review of this item. Collapsed it is a score and the first
+ * couple of sentences; opened it is the whole note plus how they scored
+ * every category - the same breakdown their profile shows, in place.
+ *
+ * The card stays a `div` rather than becoming one big button: the reviewer's
+ * name is already a button of its own (it opens their profile), and a button
+ * inside a button is not a thing.
+ */
+function CommunityCard({ review, libraryKey, onOpenProfile }) {
   const [expanded, setExpanded] = useState(false);
   const truncated = isTruncated(review.overallNote, 2);
+  const detailed = hasBreakdown(review, libraryKey);
+  // Nothing hidden means no toggle - a button that expands a card into the
+  // same card is worse than no button.
+  const expandable = truncated || detailed;
+  const fallback = review.overallNote ? null : firstCategoryNote(review, libraryKey);
 
   return (
     <div className="community__card">
@@ -79,14 +99,25 @@ function CommunityCard({ review, onOpenProfile }) {
         <p className="community__note">
           {expanded ? review.overallNote : firstSentences(review.overallNote, 2)}
         </p>
+      ) : !expanded && fallback ? (
+        /* No overall note, but they wrote about the categories - show a
+           taste of that rather than a card with nothing but a number. */
+        <p className="community__note">
+          <span className="profile__note-tag">{fallback.label}</span>
+          {firstSentences(fallback.text, 2)}
+        </p>
       ) : null}
-      {truncated ? (
+
+      {expanded && detailed ? <ReviewBreakdown review={review} libraryKey={libraryKey} /> : null}
+
+      {expandable ? (
         <button
           type="button"
           className="btn btn--ghost btn--sm"
+          aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? 'Show less' : 'Read more'}
+          {expanded ? 'Show less' : detailed ? 'Show breakdown' : 'Read more'}
         </button>
       ) : null}
     </div>

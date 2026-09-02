@@ -529,7 +529,7 @@ export default function DetailView({
           </section>
         ) : null}
 
-        <CommunityReviews item={item} user={user} onOpenProfile={onOpenProfile} />
+        <CommunityReviews item={item} user={user} config={config} onOpenProfile={onOpenProfile} />
       </div>
     </div>
     {confirmingDelete ? (

@@ -340,6 +340,65 @@ function flushAndClose(win) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Right-click menu. Electron ships no default one, so with only
+ * `spellcheck: true` set Chromium draws the red underline but has nothing
+ * to offer when you right-click it. This supplies the missing half: the
+ * speller's own suggestions, plus the usual clipboard items so a text field
+ * behaves the way a text field is expected to.
+ *
+ * The renderer's own context menus (the board's item menu) call
+ * `preventDefault()`, which stops this event from firing at all - so the two
+ * never fight over the same click.
+ * ------------------------------------------------------------------ */
+
+/** How many of the speller's suggestions to offer before the menu turns into a list. */
+const MAX_SPELL_SUGGESTIONS = 6;
+
+function attachContextMenu(webContents) {
+  webContents.on('context-menu', (event, params) => {
+    const { misspelledWord, dictionarySuggestions, editFlags, isEditable, selectionText } = params;
+    const items = [];
+
+    if (misspelledWord) {
+      const suggestions = (dictionarySuggestions ?? []).slice(0, MAX_SPELL_SUGGESTIONS);
+      for (const suggestion of suggestions) {
+        items.push({ label: suggestion, click: () => webContents.replaceMisspelling(suggestion) });
+      }
+      // Chromium can be sure a word is wrong and still have nothing to
+      // propose. Saying so beats a menu that jumps straight to "Add to
+      // dictionary" and looks like it lost the suggestions.
+      if (suggestions.length === 0) {
+        items.push({ label: 'No spelling suggestions', enabled: false });
+      }
+      items.push(
+        { type: 'separator' },
+        {
+          label: 'Add to dictionary',
+          click: () => webContents.session.addWordToSpellCheckerDictionary(misspelledWord),
+        },
+        { type: 'separator' },
+      );
+    }
+
+    if (isEditable || selectionText) {
+      items.push(
+        { label: 'Cut', role: 'cut', enabled: editFlags.canCut },
+        { label: 'Copy', role: 'copy', enabled: editFlags.canCopy },
+        { label: 'Paste', role: 'paste', enabled: editFlags.canPaste },
+        { type: 'separator' },
+        { label: 'Select all', role: 'selectAll', enabled: editFlags.canSelectAll },
+      );
+    }
+
+    // A right-click on plain chrome - nothing to offer, so show nothing
+    // rather than an empty box.
+    if (items.length === 0) return;
+
+    Menu.buildFromTemplate(items).popup({ window: BrowserWindow.fromWebContents(webContents) });
+  });
+}
+
 function createWindow() {
   // Reset per window: on macOS the app can outlive its window and open another.
   closing = false;
@@ -386,10 +445,17 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  attachContextMenu(mainWindow.webContents);
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    Menu.setApplicationMenu(null);
+    // Not `setApplicationMenu(null)`: on Windows the standard editing
+    // accelerators (Ctrl+C/X/V/A/Z) are *provided* by the application menu,
+    // so clearing it entirely left packaged builds unable to paste into
+    // their own text fields. An Edit-only menu keeps them alive, and
+    // `autoHideMenuBar` keeps the bar itself out of sight until Alt.
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }]));
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 }

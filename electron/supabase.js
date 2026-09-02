@@ -519,7 +519,9 @@ async function fetchPublicReviews(provider, providerId) {
 
     let query = getClient()
       .from('reviews')
-      .select('id, user_id, overall_score, notes, updated_at')
+      .select(
+        'id, user_id, library_key, overall_score, category_scores, disabled_categories, notes, updated_at',
+      )
       .eq('provider', provider)
       .eq('provider_id', String(providerId))
       .is('deleted_at', null)
@@ -544,8 +546,12 @@ async function fetchPublicReviews(provider, providerId) {
         id: r.id,
         userId: r.user_id,
         displayName: byId.get(r.user_id)?.display_name ?? byId.get(r.user_id)?.username ?? 'Anonymous',
+        libraryKey: r.library_key,
         overallScore: r.overall_score,
         overallNote: r.notes?.overall ?? '',
+        categoryScores: r.category_scores ?? {},
+        disabledCategories: r.disabled_categories ?? [],
+        notes: r.notes ?? {},
       })),
     };
   } catch (err) {
@@ -615,7 +621,9 @@ async function fetchProfileReviews(userId) {
 
     const { data: reviews, error } = await getClient()
       .from('reviews')
-      .select('id, library_key, title, overall_score, notes, cover_image_url, updated_at')
+      .select(
+        'id, library_key, title, overall_score, category_scores, disabled_categories, notes, cover_image_url, updated_at',
+      )
       .eq('user_id', userId)
       .is('deleted_at', null)
       .order('updated_at', { ascending: false });
@@ -631,6 +639,12 @@ async function fetchProfileReviews(userId) {
         title: r.title,
         overallScore: r.overall_score,
         overallNote: r.notes?.overall ?? '',
+        // The per-category half of the review - what they thought of the
+        // story, the gameplay, and so on. Same shape the local item uses,
+        // so the breakdown renders from one component either way.
+        categoryScores: r.category_scores ?? {},
+        disabledCategories: r.disabled_categories ?? [],
+        notes: r.notes ?? {},
         // The viewer has no local copy of someone else's cover, so this
         // stays the provider's own URL and is proxied for display (see
         // catalogImageUrl in preload.js).

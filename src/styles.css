@@ -3203,6 +3203,38 @@ kbd {
   border: 1px solid var(--line-soft);
 }
 
+/* The whole row opens the review, so it is a real button - reset the parts
+   of the UA button style that would otherwise fight the card look. */
+.profile__review--link {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.profile__review--link:hover {
+  border-color: var(--line);
+  background: var(--surface-3);
+}
+
+.profile__review--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Only the chevron reacts to hover, so a row of five cards doesn't light up
+   like a christmas tree when the cursor crosses it. */
+.profile__review--link svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.profile__review--link:hover svg {
+  color: var(--accent);
+}
+
 /* Grid children stretch by default, which would make "Read more" a
    full-width bar rather than a button. */
 .community__card > .btn,
@@ -3292,12 +3324,196 @@ kbd {
   color: var(--text-faint);
 }
 
-/* Three headline numbers, evenly weighted - no single one is the "main"
-   stat, so they get equal columns rather than a hierarchy. */
-.profile__statgrid {
+/* Stats down one side, their best reviews down the other. The stats column
+   is fixed-ish and the reviews take the rest, since a review row (art +
+   badge + title) is the thing that actually needs the width. */
+.profile__layout {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(190px, 240px) 1fr;
+  gap: 26px;
+  align-items: start;
+}
+
+.profile__col {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.profile__col-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Stacked rather than the old three-across row: in a side column the tiles
+   have height to spare and no width to spare. */
+.profile__statlist {
+  display: grid;
+  gap: 10px;
+}
+
+.profile__breakdown {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 4px 0 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.profile__breakdown-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
+  padding: 7px 0;
+  font-size: 12.5px;
+}
+
+.profile__breakdown-row dt {
+  color: var(--text-dim);
+}
+
+.profile__breakdown-row dd {
+  margin: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The column heading already separates this from what's above it, so the
+   first section skips the rule it would otherwise draw. */
+.profile__col--top > .profile__section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.profile__showmore {
+  justify-self: start;
+  gap: 6px;
+}
+
+/* One review's own page: cover, what it is, and the score at a glance. */
+/* No bottom rule here, unlike `.profile__summary` - the sections below this
+   one draw their own top border, and two lines 30px apart read as a mistake. */
+.profile__review-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile__hero-art {
+  flex: none;
+  width: 62px;
+  height: 83px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface-3);
+}
+
+.profile__hero-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The per-category scores, read-only. Bars rather than sliders: this is
+   someone else's opinion, so there is nothing here to drag. */
+.breakdown {
+  display: grid;
+  gap: 22px;
+}
+
+.breakdown__row {
+  display: grid;
+  gap: 7px;
+}
+
+.breakdown__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.breakdown__label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.breakdown__value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown__track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.breakdown__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* Their actual writing about this category. Set as body copy with a quote
+   rule down the side: the score is the summary, this is the review. */
+.breakdown__note {
+  margin: 3px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+/* Marks an excerpt as coming from one category rather than the overall
+   note, so "Story — ..." can't be misread as what they said about the whole
+   thing. */
+.profile__note-tag {
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.breakdown__note--empty {
+  border-left-color: var(--line-soft);
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+/* A category they marked N/A: still listed, so you can tell "doesn't apply"
+   apart from "scored it badly", but visibly stood down. */
+.breakdown__row--na .breakdown__label,
+.breakdown__row--na .breakdown__value {
+  color: var(--text-faint);
+}
+
+/* Below this the sheet is too narrow to split - the review rows would be
+   squeezed to nothing - so the two columns stack instead. */
+@media (max-width: 780px) {
+  .profile__layout {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .profile__statlist {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .profile__section {
