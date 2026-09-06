@@ -4,9 +4,10 @@ import { COVER_ASPECT_OPTIONS } from '../lib/settings.js';
 import { LIBRARIES } from '../lib/media.js';
 
 /**
- * The credentials the online catalog needs, in the order it makes sense to
- * collect them. `hint` is the whole setup instruction - there is nowhere else
- * in the app that explains where these come from.
+ * Optional overrides for the shared catalog service. Search works without any
+ * of these; filling one in just routes that provider through your own account
+ * instead. `hint` is the whole setup instruction - there is nowhere else in
+ * the app that explains where these come from.
  */
 const CREDENTIAL_FIELDS = [
   {
@@ -33,7 +34,7 @@ const CREDENTIAL_FIELDS = [
   },
 ];
 
-/** Full walkthroughs for the two credential hints above - one-liners point at where to look, these spell out every click. */
+/** Full walkthroughs for the two credential hints above - one-liners point at where to look, these spell out every click. Nobody needs these to search; they are here for whoever wants their own quota. */
 const CATALOG_SETUP_GUIDES = [
   {
     title: 'Getting a TMDB token (Movies)',
@@ -211,9 +212,10 @@ export default function SettingsView({
               <div>
                 <h3 className="keys__title">Online catalog</h3>
                 <p className="settings__row-desc">
-                  Lets you search for a title and add it with its cover already attached. Stored
-                  only on this machine, in your local data file. Leave blank to keep importing
-                  images by hand.
+                  Search works out of the box - these fields are optional. Fill one in to use your
+                  own IGDB or TMDB account instead of the shared one, which is worth doing if
+                  search starts rate limiting. Stored only on this machine, in your local data
+                  file.
                 </p>
               </div>
               <button

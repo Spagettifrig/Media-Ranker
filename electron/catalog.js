@@ -12,6 +12,8 @@
  * library's own tags is a library concern, and those live in src/lib/media.js.
  */
 
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = require('./supabase-config');
+
 const TIMEOUT_MS = 12000;
 
 /* ------------------------------------------------------------------ *
@@ -19,7 +21,10 @@ const TIMEOUT_MS = 12000;
  * ------------------------------------------------------------------ */
 function httpMessage(status, provider) {
   if (status === 401 || status === 403) {
-    return `${provider} rejected the credentials - check them in Settings.`;
+    // Only reachable on the direct path, which is only taken when Settings has
+    // credentials in it - so this is always about keys the user typed, and
+    // emptying the field is a real fix rather than a shrug.
+    return `${provider} rejected the credentials in Settings - fix them, or clear them to use the shared catalog.`;
   }
   if (status === 404) return `${provider} has no entry for that.`;
   if (status === 429) return `${provider} is rate limiting. Wait a moment and try again.`;
@@ -42,6 +47,62 @@ async function request(url, { method = 'GET', headers, body, provider }) {
   }
   if (!response.ok) throw new Error(httpMessage(response.status, provider));
   return response;
+}
+
+/* ------------------------------------------------------------------ *
+ * Shared catalog proxy
+ *
+ * The default path. A Supabase Edge Function holds the IGDB and TMDB
+ * credentials, so a fresh install can search straight away - nobody has to
+ * register a Twitch app to use this thing. Personal credentials entered in
+ * Settings still win, which is the escape hatch if the shared quota is busy.
+ * ------------------------------------------------------------------ */
+const PROXY_URL =
+  SUPABASE_URL && SUPABASE_ANON_KEY
+    ? `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/catalog`
+    : null;
+
+/**
+ * The function speaks for both providers, so a build without Supabase config
+ * is the only one that still has to demand the user's own keys.
+ */
+function proxyReady() {
+  return Boolean(PROXY_URL);
+}
+
+async function proxyCall(provider, payload, label) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: {
+        // The anon key is what the function's own JWT check verifies - the
+        // same key this app already uses to reach the database.
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ provider, ...payload }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`${label} took too long to answer.`);
+    throw new Error(`Could not reach ${label}. Are you online?`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    // The function writes messages meant to be read by whoever is searching.
+    // The fallback covers Supabase itself rejecting the call before the
+    // function runs, and must not mention Settings - there is nothing in
+    // there to fix on this path.
+    throw new Error(data?.error || `${label} search is unavailable right now (${response.status}).`);
+  }
+  return data;
 }
 
 /* ------------------------------------------------------------------ *
@@ -137,7 +198,7 @@ async function igdbToken({ twitchClientId, twitchClientSecret }) {
   return tokenCache.value;
 }
 
-async function igdbQuery(credentials, body) {
+async function igdbDirect(credentials, body) {
   const token = await igdbToken(credentials);
   const response = await request('https://api.igdb.com/v4/games', {
     method: 'POST',
@@ -149,7 +210,14 @@ async function igdbQuery(credentials, body) {
     body,
     provider: 'IGDB',
   });
-  const data = await response.json();
+  return response.json();
+}
+
+async function igdbQuery(credentials, body) {
+  const own = credentials?.twitchClientId && credentials?.twitchClientSecret;
+  const data = own
+    ? await igdbDirect(credentials, body)
+    : await proxyCall('igdb', { body }, 'IGDB');
   return Array.isArray(data) ? data : [];
 }
 
@@ -185,6 +253,9 @@ function fromIgdb(game) {
  * TMDB (movies)
  * ------------------------------------------------------------------ */
 async function tmdbGet(credentials, pathname, params) {
+  if (!credentials?.tmdbToken) {
+    return proxyCall('tmdb', { path: pathname, params: params ?? {} }, 'TMDB');
+  }
   const url = new URL(`https://api.themoviedb.org/3${pathname}`);
   for (const [key, value] of Object.entries(params ?? {})) {
     url.searchParams.set(key, value);
@@ -580,10 +651,18 @@ const PROVIDERS = {
   },
 };
 
-/** Which required credentials are still blank for this library. */
+/**
+ * Which required credentials are still blank for this library.
+ *
+ * Nothing is required while the shared proxy is configured - the fields in
+ * Settings are an override, not a gate. Only a build with no Supabase config
+ * falls back to asking for the user's own keys, which is what `requires`
+ * describes.
+ */
 function missing(libraryKey, credentials) {
   const provider = PROVIDERS[libraryKey];
   if (!provider) return [];
+  if (proxyReady()) return [];
   return provider.requires.filter((key) => !credentials?.[key]);
 }
 

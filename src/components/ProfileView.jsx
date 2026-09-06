@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReviewBreakdown, { firstCategoryNote } from './ReviewBreakdown.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
+import { scoreBand } from '../lib/score.js';
 import { firstSentences, profileSummary } from '../lib/social.js';
 
 /**
@@ -94,7 +95,7 @@ export default function ProfileView({ target, onClose }) {
   return createPortal(
     <div className="overlay" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <div
-        className="sheet"
+        className="sheet sheet--profile"
         role="dialog"
         aria-modal="true"
         aria-label={displayName || 'Profile'}
@@ -183,29 +184,90 @@ function Summary({ displayName, username, summary, onShowMore, onOpenReview }) {
               <div className="profile__statlist">
                 <Stat
                   value={summary.total}
-                  label={summary.total === 1 ? 'shared review' : 'shared reviews'}
+                  label={
+                    summary.activeLibraries > 1
+                      ? `shared, across ${summary.activeLibraries} libraries`
+                      : summary.total === 1
+                        ? 'shared review'
+                        : 'shared reviews'
+                  }
                 />
-                <Stat value={summary.average ?? '—'} label="average score" />
                 <Stat
-                  value={summary.best ? summary.best.overallScore : '—'}
-                  label={summary.best ? `highest — ${summary.best.title}` : 'highest'}
+                  value={summary.perfect > 0 ? summary.perfect : (summary.best?.overallScore ?? '—')}
+                  label={
+                    summary.perfect > 0
+                      ? summary.perfect === 1
+                        ? 'perfect 100'
+                        : 'perfect 100s'
+                      : summary.best
+                        ? `highest — ${summary.best.title}`
+                        : 'highest'
+                  }
                 />
               </div>
 
-              {/* The same numbers broken out per library, so the column
-                  answers "what do they mostly rate?" as well as "how much?". */}
-              <dl className="profile__breakdown">
-                {summary.libraries.map((library) => (
-                  <div key={library.key} className="profile__breakdown-row">
-                    <dt>{library.label}</dt>
+              {/* One average per library, never one across all three - the
+                  mean of a game, a film and a series answers no question. */}
+              <ProfileChart title="Average by library">
+                <div className="bars bars--compact">
+                  {summary.libraries
+                    .filter((library) => library.average !== null)
+                    .map((library) => (
+                      <MiniBar
+                        key={library.key}
+                        label={library.label}
+                        value={library.average}
+                        color={scoreBand(library.average).color}
+                        display={String(library.average)}
+                        note={`${library.count} shared`}
+                      />
+                    ))}
+                </div>
+              </ProfileChart>
+
+              <ProfileChart title="Score spread" note="Where their scores land on the 1-100 scale.">
+                <MiniColumns bands={summary.bands} />
+              </ProfileChart>
+
+              {/* The bit that actually says something about their taste. */}
+              {summary.libraries
+                .filter((library) => library.categories.length > 0)
+                .map((library) => (
+                  <ProfileChart
+                    key={library.key}
+                    title={`${library.label} — by category`}
+                    note="How they score each part, on average."
+                  >
+                    <div className="bars bars--compact">
+                      {library.categories.map((category) => (
+                        <MiniBar
+                          key={category.key}
+                          label={category.label}
+                          value={category.value}
+                          color={scoreBand(category.value).color}
+                          display={String(category.value)}
+                        />
+                      ))}
+                    </div>
+                  </ProfileChart>
+                ))}
+
+              {summary.best && summary.worst ? (
+                <dl className="profile__breakdown">
+                  <div className="profile__breakdown-row">
+                    <dt>Highest</dt>
                     <dd>
-                      {library.count === 0
-                        ? '—'
-                        : `${library.count}${library.average === null ? '' : ` · ${library.average} avg`}`}
+                      {summary.best.title} · {summary.best.overallScore}
                     </dd>
                   </div>
-                ))}
-              </dl>
+                  <div className="profile__breakdown-row">
+                    <dt>Lowest</dt>
+                    <dd>
+                      {summary.worst.title} · {summary.worst.overallScore}
+                    </dd>
+                  </div>
+                </dl>
+              ) : null}
             </section>
 
             <section className="profile__col profile__col--top">
@@ -239,6 +301,65 @@ function Stat({ value, label }) {
     <div className="profile__stat">
       <strong>{value}</strong>
       <span>{label}</span>
+    </div>
+  );
+}
+
+/** A titled block in the stats column - the sheet's version of a Stats-tab chart. */
+function ProfileChart({ title, note, children }) {
+  return (
+    <section className="profile__chart">
+      <h4 className="profile__chart-title">{title}</h4>
+      {note ? <p className="profile__chart-note">{note}</p> : null}
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The Stats tab's horizontal bar, narrowed for the profile column. Same
+ * markup and classes, so the two pages read as one app.
+ */
+function MiniBar({ label, value, color, display, note = null }) {
+  return (
+    <div className="bar bar--compact" title={`${label}: ${display}`}>
+      <span className="bar__label">
+        {label}
+        {note ? <em className="bar__sublabel">{note}</em> : null}
+      </span>
+      <span className="bar__track">
+        <span
+          className="bar__fill"
+          style={{ width: `${Math.max(1.5, value)}%`, background: color }}
+        />
+      </span>
+      <span className="bar__value">{display}</span>
+    </div>
+  );
+}
+
+/** The score-distribution columns, sized for a side column. */
+function MiniColumns({ bands }) {
+  const max = Math.max(1, ...bands.map((band) => band.count));
+
+  return (
+    <div className="cols cols--compact">
+      {bands.map((band) => (
+        <div className="col" key={band.key}>
+          <div className="col__plot">
+            <div
+              className="col__bar"
+              style={{ height: `${(band.count / max) * 100}%`, background: band.color }}
+              title={`${band.name} (${band.label}): ${band.count}`}
+            />
+          </div>
+          {/* Only the ends are labelled - nine numbers in this width is a
+              smear, and the shape is what the chart is for. */}
+          <span className="col__label">
+            {band.key === '0-19' ? '0' : band.key === '90-100' ? '100' : ''}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

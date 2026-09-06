@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import ScoreBadge from './ScoreBadge.jsx';
 import { scoreBand } from '../lib/score.js';
 import { ACCENT, formatDate, formatHours, summarize } from '../lib/stats.js';
@@ -88,8 +88,8 @@ export default function StatsView({ items, config, onOpen }) {
           title="Genres"
           note={
             stats.untaggedCount > 0
-              ? `How many carry each genre, and how they average. ${stats.untaggedCount} untagged.`
-              : 'How many carry each genre, and how they average.'
+              ? `Bar length is how many carry the genre; the chip is how they average. ${stats.untaggedCount} untagged.`
+              : 'Bar length is how many carry the genre; the chip is how they average.'
           }
         >
           <div className="bars">
@@ -99,8 +99,14 @@ export default function StatsView({ items, config, onOpen }) {
                 label={genre.label}
                 value={genre.count}
                 max={stats.genreBreakdown[0].count}
-                color={scoreBand(genre.average).color}
-                display={`${genre.count} · avg ${genre.average}`}
+                /* The bar measures the count, so it is the neutral accent.
+                   Tinting it by the average made every row a shade of the
+                   same colour whenever someone's scores clustered - a wall
+                   of orange that told you nothing. The average gets its own
+                   chip instead, where the colour still means something. */
+                color={ACCENT}
+                display={<Chip count={genre.count} average={genre.average} />}
+                titleText={`${genre.label}: ${genre.count}, averaging ${genre.average}`}
               />
             ))}
           </div>
@@ -124,7 +130,8 @@ export default function StatsView({ items, config, onOpen }) {
                 value={mode.count}
                 max={Math.max(...stats.modeBreakdown.map((entry) => entry.count))}
                 color={ACCENT}
-                display={`${mode.count} · avg ${mode.average}`}
+                display={<Chip count={mode.count} average={mode.average} />}
+                titleText={`${mode.label}: ${mode.count}, averaging ${mode.average}`}
               />
             ))}
           </div>
@@ -132,7 +139,10 @@ export default function StatsView({ items, config, onOpen }) {
       ) : null}
 
       {stats.hoursRanking.length > 0 ? (
-        <Chart title={config.hours.chartTitle} note={config.hours.chartNote}>
+        <Chart
+          title={config.hours.chartTitle}
+          note={`${config.hours.chartNote} Coloured by score, so you can see whether the time went into things worth it.`}
+        >
           <div className="bars">
             {stats.hoursRanking.map((entry) => (
               <Bar
@@ -140,8 +150,8 @@ export default function StatsView({ items, config, onOpen }) {
                 label={entry.title}
                 value={entry.hours}
                 max={stats.hoursRanking[0].hours}
-                color={ACCENT}
-                display={formatHours(entry.hours)}
+                color={scoreBand(entry.score).color}
+                display={`${formatHours(entry.hours)} · ${entry.score}`}
                 onSelect={() => onOpen(entry.id)}
               />
             ))}
@@ -242,6 +252,20 @@ function Tile({ label, value, note, accent }) {
   );
 }
 
+/** A count, plus that group's mean score in the colour the scale gives it. */
+function Chip({ count, average }) {
+  return (
+    <>
+      {count}
+      {average === null ? null : (
+        <em className="bar__chip" style={{ color: scoreBand(average).color }}>
+          {average}
+        </em>
+      )}
+    </>
+  );
+}
+
 function Chart({ title, note, children }) {
   return (
     <section className="chart" aria-label={title}>
@@ -278,7 +302,7 @@ function Columns({ items, format }) {
 }
 
 /** One horizontal bar. Clickable rows jump to that item's detail page. */
-function Bar({ label, value, max, color, display, onSelect }) {
+function Bar({ label, value, max, color, display, titleText = null, onSelect }) {
   const width = max > 0 ? Math.max(1.5, (value / max) * 100) : 0;
   const Row = onSelect ? 'button' : 'div';
   return (
@@ -286,7 +310,7 @@ function Bar({ label, value, max, color, display, onSelect }) {
       className={`bar${onSelect ? ' bar--action' : ''}`}
       type={onSelect ? 'button' : undefined}
       onClick={onSelect}
-      title={`${label}: ${display}`}
+      title={titleText ?? `${label}: ${display}`}
     >
       <span className="bar__label">{label}</span>
       <span className="bar__track">
@@ -299,18 +323,85 @@ function Bar({ label, value, max, color, display, onSelect }) {
 
 const PLOT = { w: 720, h: 320, left: 44, right: 16, top: 16, bottom: 34 };
 
+/**
+ * Past this ratio between the longest and shortest entry, a linear axis is
+ * useless: one 3000-hour game pins everything played for an evening into a
+ * single column of dots against the left edge. Hours naturally span orders
+ * of magnitude, so the axis switches to log and the spread comes back.
+ */
+const WIDE_SPREAD_RATIO = 50;
+
+/** Powers of ten inside [lo, hi] - 1h, 10h, 100h, 1000h. */
+function decadeTicks(lo, hi) {
+  const ticks = [];
+  for (let power = Math.floor(Math.log10(lo)); power <= Math.ceil(Math.log10(hi)); power += 1) {
+    const tick = 10 ** power;
+    if (tick >= lo && tick <= hi) ticks.push(tick);
+  }
+  return ticks;
+}
+
 function Scatter({ points, onOpen }) {
-  const maxHours = Math.max(...points.map((point) => point.hours));
+  const hours = points.map((point) => point.hours);
+  const maxHours = Math.max(...hours);
+  const minHours = Math.min(...hours);
+  const wide = minHours > 0 && maxHours / minHours >= WIDE_SPREAD_RATIO;
+  // Wide libraries open on the log axis because the linear one shows them
+  // nothing - but the toggle is right there, and linear is still the honest
+  // default for a library where everything took about as long.
+  const [log, setLog] = useState(wide);
+
   const innerW = PLOT.w - PLOT.left - PLOT.right;
   const innerH = PLOT.h - PLOT.top - PLOT.bottom;
 
-  const x = (hours) => PLOT.left + (maxHours > 0 ? (hours / maxHours) * innerW : 0);
+  // Floor at 0.1h so a half-hour entry can't send log10 to negative infinity.
+  const lo = Math.max(0.1, minHours);
+  const hi = Math.max(lo * 10, maxHours);
+  const logLo = Math.log10(lo);
+  const logSpan = Math.log10(hi) - logLo;
+
+  const x = (value) => {
+    if (log) {
+      const clamped = Math.max(value, lo);
+      return PLOT.left + ((Math.log10(clamped) - logLo) / logSpan) * innerW;
+    }
+    return PLOT.left + (maxHours > 0 ? (value / maxHours) * innerW : 0);
+  };
   const y = (score) => PLOT.top + innerH - (score / 100) * innerH;
 
   const yTicks = [0, 25, 50, 75, 100];
-  const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxHours * f));
+  const xTicks = log
+    ? decadeTicks(lo, hi)
+    : [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxHours * f));
 
   return (
+    <div className="scatter__wrap">
+      <div className="scatter__tools">
+        <div className="segmented segmented--sm" role="group" aria-label="Hours axis scale">
+          <button
+            type="button"
+            className={`segmented__item${log ? '' : ' is-on'}`}
+            aria-pressed={!log}
+            onClick={() => setLog(false)}
+          >
+            Linear
+          </button>
+          <button
+            type="button"
+            className={`segmented__item${log ? ' is-on' : ''}`}
+            aria-pressed={log}
+            onClick={() => setLog(true)}
+          >
+            Log
+          </button>
+        </div>
+        {wide && !log ? (
+          <p className="scatter__warn">
+            {formatHours(maxHours)} against {formatHours(minHours)} — log spreads these out.
+          </p>
+        ) : null}
+      </div>
+
     <svg
       className="scatter"
       viewBox={`0 0 ${PLOT.w} ${PLOT.h}`}
@@ -340,7 +431,7 @@ function Scatter({ points, onOpen }) {
           className="scatter__tick"
           textAnchor={i === 0 ? 'start' : i === xTicks.length - 1 ? 'end' : 'middle'}
         >
-          {tick}h
+          {formatHours(tick)}
         </text>
       ))}
 
@@ -358,5 +449,6 @@ function Scatter({ points, onOpen }) {
         </circle>
       ))}
     </svg>
+    </div>
   );
 }

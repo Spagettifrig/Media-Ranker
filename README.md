@@ -5,8 +5,10 @@ Local-first: every screen works with no account and no connection, and the
 library lives on your own disk.
 
 Signing in adds the shared half — cloud backup of your own reviews, other
-people's reviews under a game, and the annual **awards**. Catalog search needs
-IGDB/TMDB credentials of your own, entered in Settings.
+people's reviews under a game, and the annual **awards**. Catalog search works
+out of the box: the IGDB and TMDB credentials live in a Supabase Edge Function
+(`supabase/functions/catalog`), so nothing to sign up for and nothing to paste
+in. Settings still takes your own keys if you'd rather not share the quota.
 
 Electron + React (Vite), packaged with electron-builder into an NSIS installer.
 
@@ -65,6 +67,27 @@ separate namespaces — movie `1396` and series `1396` are unrelated — so seri
 reviews are tagged `provider: 'tmdb_tv'`, not `'tmdb'`. Community reviews and
 trophies join on `(provider, provider_id)` alone, and sharing the tag would
 hang one medium's awards on the other's poster.
+
+### Catalog credentials
+
+IGDB and TMDB both want a key, and asking every person who installs the app to
+register a Twitch developer application — two-factor and all — was the single
+worst thing about setting it up. So the keys don't ship in the installer and
+they aren't the user's problem: they sit as Supabase secrets behind an Edge
+Function in `supabase/functions/catalog`, which the app calls with the anon key
+it already carries. Supabase's own JWT check on the function is what keeps it
+from being an open proxy, and TMDB paths are allowlisted so it can only ever
+serve this app's four endpoints.
+
+`electron/catalog.js` still knows how to talk to both providers directly, and
+prefers to whenever Settings has credentials in it — one shared quota across
+every install is fine for a small group but is the obvious thing to outgrow, so
+the escape hatch stays. `missing()` is what encodes the difference: it reports
+no gaps while the proxy is configured, which is what makes the fields in
+Settings read as optional rather than as a wall in front of search.
+
+Rotating a key is `supabase secrets set` and nothing else — no release, no
+reinstall. The deploy walkthrough is in `supabase/functions/catalog/README.md`.
 
 ### Screens
 
@@ -256,8 +279,8 @@ Items gained `releaseYear` and `platforms` with the awards; both load as
 `null`/`[]` on files written by older builds. Because Game of the Year is
 decided on `releaseYear`, the first launch after upgrading quietly backfills it
 for anything with a catalog id — one batched query per 200 games on IGDB, one
-request per film on TMDB. It runs once per library per session, needs the
-catalog credentials, and failing just leaves the years missing for next time.
+request per film on TMDB. It runs once per library per session and failing
+just leaves the years missing for next time.
 
 Which console you played something on stays on this machine. `firstPlayed` no
 longer does: awards eligibility is decided on it, so it has to be the same date

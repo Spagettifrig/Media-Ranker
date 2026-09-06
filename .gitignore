@@ -4,3 +4,4 @@ release/
 build/icon.ico
 build/icon.png
 *.log
+supabase/.temp/
