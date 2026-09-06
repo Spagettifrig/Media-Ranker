@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CommunityReviews from './CommunityReviews.jsx';
 import ConfirmDialog from './ConfirmDialog.jsx';
+import HiddenFrom from './HiddenFrom.jsx';
 import ScoreSlider from './ScoreSlider.jsx';
 import SaveIndicator from './SaveIndicator.jsx';
 import TagChips from './TagChips.jsx';
@@ -526,6 +527,8 @@ export default function DetailView({
                 ))}
               </div>
             </div>
+
+            <HiddenFrom item={item} />
           </section>
         ) : null}
 

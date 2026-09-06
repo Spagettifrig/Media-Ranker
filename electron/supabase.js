@@ -436,6 +436,72 @@ function reviewRow(libraryKey, item, userId) {
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * Hiding a title from one person
+ *
+ * All three go through SECURITY DEFINER functions in supabase/blocks.sql.
+ * The rules that matter - you may only hide from a friend, you may never
+ * see a block aimed at you - are enforced there, because the renderer is
+ * not a place a rule can be enforced.
+ * ------------------------------------------------------------------ */
+async function hideReviewFrom(blockedId, provider, providerId) {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+    const { error } = await getClient().rpc('hide_review_from', {
+      p_blocked: blockedId,
+      p_provider: provider,
+      p_provider_id: String(providerId),
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+async function unhideReviewFrom(blockedId, provider, providerId) {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+    const { error } = await getClient().rpc('unhide_review_from', {
+      p_blocked: blockedId,
+      p_provider: provider,
+      p_provider_id: String(providerId),
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/** Every block this user owns. One call feeds both the item control and Settings. */
+async function fetchReviewBlocks() {
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return { ok: false, error: 'Not signed in.' };
+    const { data, error } = await getClient().rpc('list_review_blocks');
+    if (error) return { ok: false, error: error.message };
+    return {
+      ok: true,
+      blocks: (data ?? []).map((row) => ({
+        blockedId: row.blocked_id,
+        username: row.username,
+        displayName: row.display_name,
+        provider: row.provider,
+        providerId: row.provider_id,
+        // Null when the item has since been deleted locally - the block
+        // outlives the row, so the UI needs something to show either way.
+        title: row.title ?? 'Removed from your library',
+        libraryKey: row.library_key,
+      })),
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 async function pushReview(libraryKey, item) {
   if (!item?.provider || !item?.providerId) return { ok: false, error: 'No catalog identity.' };
   try {
@@ -677,6 +743,9 @@ module.exports = {
   respondFriendRequest,
   removeFriend,
   fetchFriends,
+  hideReviewFrom,
+  unhideReviewFrom,
+  fetchReviewBlocks,
   pushReview,
   pushReviews,
   deleteReview,

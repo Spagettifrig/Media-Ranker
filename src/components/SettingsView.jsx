@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COVER_ASPECT_OPTIONS } from '../lib/settings.js';
 import { LIBRARIES } from '../lib/media.js';
+import HiddenTitles from './HiddenTitles.jsx';
 
 /**
  * Optional overrides for the shared catalog service. Search works without any
@@ -101,6 +102,7 @@ const SHORTCUT_SECTIONS = [
  * goes looking for either.
  */
 export default function SettingsView({
+  user,
   theme,
   onThemeChange,
   coverAspect,
@@ -263,6 +265,8 @@ export default function SettingsView({
               ))}
             </div>
           </section>
+
+          <HiddenTitles user={user} />
 
           <UpdateSection
             appVersion={appVersion}

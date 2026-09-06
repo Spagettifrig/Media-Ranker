@@ -165,6 +165,23 @@ contextBridge.exposeInMainWorld('api', {
   /** Your friends and both directions of pending request. Resolves to { ok, friends, incoming, outgoing }. */
   fetchFriends: () => ipcRenderer.invoke('sync:fetchFriends'),
 
+  /* ---- hidden titles --------------------------------------------------
+   * Hiding is a database rule, not a drawing decision: the restrictive
+   * policy in blocks.sql is what actually stops the row being returned, so
+   * a renderer that forgets to filter still cannot leak one.
+   * ------------------------------------------------------------------- */
+
+  /** Stop one friend seeing your review of one title. Resolves to { ok } or { ok: false, error }. */
+  hideReviewFrom: (blockedId, provider, providerId) =>
+    ipcRenderer.invoke('sync:hideReviewFrom', blockedId, provider, providerId),
+
+  /** Undo that. Works even if you are no longer friends. */
+  unhideReviewFrom: (blockedId, provider, providerId) =>
+    ipcRenderer.invoke('sync:unhideReviewFrom', blockedId, provider, providerId),
+
+  /** Everything you have hidden, from anyone. Resolves to { ok, blocks }. */
+  fetchReviewBlocks: () => ipcRenderer.invoke('sync:fetchReviewBlocks'),
+
   /* ---- awards ---------------------------------------------------------
    * Every one of these is an RPC into a SECURITY DEFINER function. None of
    * them can be talked into skipping a rule by a renderer that lies, which

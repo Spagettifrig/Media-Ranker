@@ -350,6 +350,7 @@ function Scatter({ points, onOpen }) {
   // nothing - but the toggle is right there, and linear is still the honest
   // default for a library where everything took about as long.
   const [log, setLog] = useState(wide);
+  const [hover, setHover] = useState(null);
 
   const innerW = PLOT.w - PLOT.left - PLOT.right;
   const innerH = PLOT.h - PLOT.top - PLOT.bottom;
@@ -402,11 +403,13 @@ function Scatter({ points, onOpen }) {
         ) : null}
       </div>
 
+    <div className="scatter__plot">
     <svg
       className="scatter"
       viewBox={`0 0 ${PLOT.w} ${PLOT.h}`}
       role="img"
       aria-label={`Hours against score for ${points.length} entries`}
+      onMouseLeave={() => setHover(null)}
     >
       {yTicks.map((tick) => (
         <g key={`y${tick}`}>
@@ -435,20 +438,45 @@ function Scatter({ points, onOpen }) {
         </text>
       ))}
 
-      {points.map((point) => (
-        <circle
-          key={point.id}
-          cx={x(point.hours)}
-          cy={y(point.score)}
-          r="6"
-          fill={point.color}
-          className="scatter__dot"
-          onClick={() => onOpen(point.id)}
-        >
-          <title>{`${point.title} - ${formatHours(point.hours)}, score ${point.score}`}</title>
-        </circle>
-      ))}
+      {points.map((point) => {
+        const cx = x(point.hours);
+        const cy = y(point.score);
+        return (
+          <circle
+            key={point.id}
+            cx={cx}
+            cy={cy}
+            r="6"
+            fill={point.color}
+            className={`scatter__dot${hover?.id === point.id ? ' is-hovered' : ''}`}
+            onClick={() => onOpen(point.id)}
+            // The viewBox scales uniformly to the container, so a fraction of
+            // the plot box is a fraction of the rendered box - no measuring.
+            onMouseEnter={() => setHover({ ...point, fx: cx / PLOT.w, fy: cy / PLOT.h })}
+          />
+        );
+      })}
     </svg>
+
+    {hover ? (
+      <div
+        className={`scatter__tip scatter__tip--${
+          hover.fx < 0.15 ? 'start' : hover.fx > 0.85 ? 'end' : 'mid'
+        }`}
+        style={{ left: `${hover.fx * 100}%`, top: `${hover.fy * 100}%` }}
+        aria-hidden="true"
+      >
+        <span className="scatter__tip-title">{hover.title}</span>
+        <span className="scatter__tip-meta">
+          <span className="scatter__tip-score" style={{ color: hover.color }}>
+            {hover.score}
+          </span>
+          <span className="scatter__tip-sep" />
+          {formatHours(hover.hours)}
+        </span>
+      </div>
+    ) : null}
+    </div>
     </div>
   );
 }

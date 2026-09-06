@@ -62,10 +62,10 @@
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
-    "@supabase/supabase-js": "^2.45.0",
-    "electron-updater": "^6.3.9",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@supabase/supabase-js": "^2.45.0",
+    "electron-updater": "^6.3.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -75,6 +75,7 @@
     "cross-env": "^10.1.0",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
+    "geist": "^1.7.2",
     "vite": "^8.2.1",
     "wait-on": "^9.1.0"
   }

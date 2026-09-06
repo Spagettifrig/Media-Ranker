@@ -854,6 +854,17 @@ function registerIpc() {
 
   ipcMain.handle('sync:fetchFriends', async () => supabase.fetchFriends());
 
+  /* ---- hidden titles --------------------------------------------------- */
+  ipcMain.handle('sync:hideReviewFrom', async (_event, blockedId, provider, providerId) =>
+    supabase.hideReviewFrom(blockedId, provider, providerId),
+  );
+
+  ipcMain.handle('sync:unhideReviewFrom', async (_event, blockedId, provider, providerId) =>
+    supabase.unhideReviewFrom(blockedId, provider, providerId),
+  );
+
+  ipcMain.handle('sync:fetchReviewBlocks', async () => supabase.fetchReviewBlocks());
+
   /* ---- awards ---------------------------------------------------------- */
   ipcMain.handle('awards:season', async (_event, libraryKey) => awards.getSeason(libraryKey));
 

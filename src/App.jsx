@@ -931,6 +931,7 @@ export default function App() {
       />
       {showSettings ? (
         <SettingsView
+          user={user}
           theme={theme}
           onThemeChange={setTheme}
           coverAspect={coverAspect}
