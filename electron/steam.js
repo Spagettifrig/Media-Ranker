@@ -1,6 +1,10 @@
 'use strict';
 
 const { randomUUID } = require('node:crypto');
+const { execFile } = require('node:child_process');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { SUPABASE_URL, SUPABASE_ANON_KEY } = require('./supabase-config');
 
 const STEAM_ID = /^[1-9]\d{16}$/;
@@ -98,6 +102,164 @@ async function fetchLibrary(input, personalKey = '', fetcher = fetch) {
   return { steamId, games: normalizeLibrary(data?.response) };
 }
 
+/** Minimal reader for Valve's KeyValues text format (loginusers.vdf). */
+function parseVdf(text) {
+  const tokens = String(text ?? '').match(/"(?:[^"\\]|\\.)*"|[{}]/g) ?? [];
+  let i = 0;
+  const read = () => {
+    const node = {};
+    while (i < tokens.length) {
+      const token = tokens[i++];
+      if (token === '}') return node;
+      if (token === '{') continue;
+      const key = token.slice(1, -1);
+      if (tokens[i] === '{') { i++; node[key] = read(); }
+      else if (tokens[i] !== undefined && tokens[i] !== '}') node[key] = tokens[i++].slice(1, -1).replace(/\\(.)/g, '$1');
+    }
+    return node;
+  };
+  return read();
+}
+
+/** Accounts that have signed in to the Steam client on this PC, most recent first. */
+function parseLoginUsers(text) {
+  const users = parseVdf(text).users ?? {};
+  return Object.entries(users).flatMap(([steamId, user]) => {
+    if (!STEAM_ID.test(steamId) || !user || typeof user !== 'object') return [];
+    const name = String(user.PersonaName || user.AccountName || '').trim().slice(0, 64);
+    return [{ steamId, name: name || steamId, mostRecent: user.MostRecent === '1', timestamp: Number(user.Timestamp) || 0 }];
+  }).sort((a, b) => Number(b.mostRecent) - Number(a.mostRecent) || b.timestamp - a.timestamp);
+}
+
+function registrySteamPath() {
+  if (process.platform !== 'win32') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile('reg', ['query', 'HKCU\\Software\\Valve\\Steam', '/v', 'SteamPath'], { timeout: 5000, windowsHide: true },
+      (error, stdout) => resolve(error ? null : stdout.match(/SteamPath\s+REG_SZ\s+(.+)/)?.[1]?.trim() ?? null));
+  });
+}
+
+function steamFolders(steamPath) {
+  const home = os.homedir();
+  const candidates = [steamPath];
+  if (process.platform === 'win32') {
+    candidates.push(path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Steam'),
+      path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Steam'));
+  } else if (process.platform === 'darwin') candidates.push(path.join(home, 'Library/Application Support/Steam'));
+  else candidates.push(path.join(home, '.steam/steam'), path.join(home, '.local/share/Steam'));
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+/** The Steam install that holds the account list, or null. */
+async function findSteam({ steamPath = registrySteamPath, readFile = fsp.readFile } = {}) {
+  for (const folder of steamFolders(await steamPath())) {
+    try { return { folder, accounts: parseLoginUsers(await readFile(path.join(folder, 'config', 'loginusers.vdf'), 'utf8')) }; }
+    catch { /* try the next location */ }
+  }
+  return null;
+}
+
+/** Reads only the local account list; nothing is sent anywhere until the user picks one. */
+async function detectAccounts(options) {
+  return (await findSteam(options))?.accounts ?? [];
+}
+
+/**
+ * Names and types from the Steam client's appinfo.vdf cache (binary KeyValues,
+ * format 28 or 29). Returns Map(appId → { name, type }); unknown formats yield an empty map.
+ */
+function parseAppInfo(buffer) {
+  const apps = new Map();
+  if (!Buffer.isBuffer(buffer) || buffer.length < 16) return apps;
+  const magic = buffer.readUInt32LE(0);
+  if (magic !== 0x07564428 && magic !== 0x07564429) return apps;
+  let strings = null;
+  let p = 8;
+  if (magic === 0x07564429) {
+    const offset = Number(buffer.readBigInt64LE(8));
+    p = 16;
+    if (offset <= 0 || offset >= buffer.length) return apps;
+    strings = [];
+    let q = offset + 4;
+    for (let n = buffer.readUInt32LE(offset); n > 0 && q < buffer.length; n--) {
+      const end = buffer.indexOf(0, q);
+      if (end < 0) break;
+      strings.push(buffer.toString('utf8', q, end));
+      q = end + 1;
+    }
+  }
+  const cstring = (at) => {
+    const end = buffer.indexOf(0, at);
+    if (end < 0) throw new Error('truncated');
+    return [buffer.toString('utf8', at, end), end + 1];
+  };
+  const readKv = (at, depth = 0) => {
+    if (depth > 32) throw new Error('too deep');
+    const node = {};
+    for (;;) {
+      const type = buffer[at++];
+      if (type === 8) return [node, at];
+      let key;
+      if (strings) { key = strings[buffer.readUInt32LE(at)]; at += 4; } else [key, at] = cstring(at);
+      let value;
+      if (type === 0) [value, at] = readKv(at, depth + 1);
+      else if (type === 1) [value, at] = cstring(at);
+      else if (type === 2 || type === 4 || type === 6) { value = buffer.readInt32LE(at); at += 4; }
+      else if (type === 3) { value = buffer.readFloatLE(at); at += 4; }
+      else if (type === 7 || type === 10) { value = null; at += 8; }
+      else throw new Error('unknown type');
+      node[key] = value;
+    }
+  };
+  try {
+    while (p + 8 <= buffer.length) {
+      const appId = buffer.readUInt32LE(p);
+      if (appId === 0) break;
+      const size = buffer.readUInt32LE(p + 4);
+      const start = p + 8;
+      // infoState, lastUpdated, picsToken, sha1, changeNumber, binary sha1: 60 bytes before the KeyValues.
+      try {
+        const [data] = readKv(start + 60);
+        const common = data?.appinfo?.common;
+        if (typeof common?.name === 'string') apps.set(String(appId), { name: common.name, type: String(common.type ?? '').toLowerCase() });
+      } catch { /* skip one unreadable entry */ }
+      p = start + size;
+    }
+  } catch { /* keep what was read */ }
+  return apps;
+}
+
+const STEAM_ID_BASE = 76561197960265728n;
+
+/**
+ * A Steam library read from the Steam client on this PC: no API key, and no
+ * public profile needed. Played games come with playtime from localconfig.vdf;
+ * games shown in the Steam library add owned titles without playtime.
+ */
+async function readLocalLibrary(steamId, { steamPath = registrySteamPath, readFile = fsp.readFile, readdir = fsp.readdir } = {}) {
+  if (!STEAM_ID.test(String(steamId ?? ''))) throw new Error('Choose a Steam account found on this PC.');
+  const steam = await findSteam({ steamPath, readFile });
+  if (!steam?.accounts.some((account) => account.steamId === steamId)) throw new Error('That Steam account is not signed in on this PC.');
+  const accountId = String(BigInt(steamId) - STEAM_ID_BASE);
+  const info = parseAppInfo(await readFile(path.join(steam.folder, 'appcache', 'appinfo.vdf')).catch(() => null));
+  if (!info.size) throw new Error('Could not read the game list from Steam on this PC. Open Steam once, then try again.');
+  let played = {};
+  try {
+    const config = parseVdf(await readFile(path.join(steam.folder, 'userdata', accountId, 'config', 'localconfig.vdf'), 'utf8'));
+    const valve = config?.UserLocalConfigStore?.Software?.Valve?.Steam ?? config?.UserLocalConfigStore?.Software?.valve?.Steam;
+    played = valve?.apps ?? valve?.Apps ?? {};
+  } catch { /* an account without local history still has its library cache */ }
+  const owned = await readdir(path.join(steam.folder, 'appcache', 'librarycache')).catch(() => []);
+  const ids = new Set([...Object.keys(played), ...owned.map(String)].filter((id) => APP_ID.test(id)));
+  const games = [...ids].flatMap((id) => {
+    const app = info.get(id);
+    if (app?.type !== 'game' || !app.name.trim()) return [];
+    const minutes = Number(played[id]?.playtime ?? played[id]?.Playtime);
+    return [{ appid: Number(id), name: app.name, ...(Number.isFinite(minutes) ? { playtime_forever: minutes } : {}) }];
+  });
+  return { steamId, games: normalizeLibrary({ game_count: games.length, games }) };
+}
+
 /** Preview sessions bind import IDs/metadata to a library actually returned by Steam. */
 function createImporter({ matchGames, download, fetcher = fetch }) {
   const sessions = new Map();
@@ -119,8 +281,8 @@ function createImporter({ matchGames, download, fetcher = fetch }) {
     });
   }
   return {
-    async preview(profile, key) {
-      const result = await fetchLibrary(profile, key, fetcher);
+    async preview(profile, key, local) {
+      const result = local ? await local(profile) : await fetchLibrary(profile, key, fetcher);
       const id = randomUUID();
       while (sessions.size >= 2) sessions.delete(sessions.keys().next().value);
       sessions.set(id, { created: Date.now(), games: new Map(result.games.map((game) => [game.steamAppId, game])) });
@@ -149,4 +311,7 @@ function createImporter({ matchGames, download, fetcher = fetch }) {
   };
 }
 
-module.exports = { parseProfile, normalizeLibrary, fetchLibrary, createImporter };
+module.exports = {
+  parseProfile, normalizeLibrary, fetchLibrary, createImporter, parseVdf, parseLoginUsers, detectAccounts,
+  parseAppInfo, readLocalLibrary,
+};

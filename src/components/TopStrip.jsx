@@ -56,7 +56,7 @@ export default function TopStrip({
 
       <div className="strip__actions">
         <SaveIndicator state={saveState} />
-        {onSteamImport ? <button type="button" className="btn btn--ghost" onClick={onSteamImport} disabled={importing}>Import Steam</button> : null}
+        {onSteamImport ? <button type="button" className="btn btn--ghost" onClick={onSteamImport} disabled={importing}>Import games</button> : null}
         {/* The manual path stays first-class: the catalog needs a key and a
             connection, and neither is guaranteed. */}
         <button

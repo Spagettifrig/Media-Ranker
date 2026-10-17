@@ -1,13 +1,14 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const catalog = require('./catalog.js');
-const { createImporter } = require('./steam.js');
+const { createImporter, detectAccounts: detectSteamAccounts, readLocalLibrary: readLocalSteamLibrary } = require('./steam.js');
+const consoles = require('./consoles.js');
 const supabase = require('./supabase.js');
 const awards = require('./awards.js');
 const { autoUpdater } = require('electron-updater');
@@ -275,6 +276,7 @@ const CREDENTIAL_KEYS = ['tmdbToken', 'twitchClientId', 'twitchClientSecret'];
 
 let credentials = {};
 const steamImporter = createImporter({ matchGames: catalog.steamMatches, download: downloadIntoLibrary });
+const consoleImporter = consoles.createConsoleImporter({ download: downloadIntoLibrary });
 
 function rememberCredentials(settings) {
   const next = {};
@@ -767,8 +769,36 @@ function registerIpc() {
     return catalog.status(String(libraryKey ?? ''), credentials);
   });
 
-  ipcMain.handle('steam:preview', async (_event, profile, key) => {
-    try { return { ok: true, ...await steamImporter.preview(profile, key) }; }
+  /**
+   * PlayStation / Xbox: sign in on the platform's own page in a throwaway
+   * window, read the played-games list, and drop the token. A pasted
+   * PlayStation sign-in code skips the window.
+   */
+  let consoleSignIn = false;
+  ipcMain.handle('consoles:load', async (_event, store, npsso) => {
+    if (consoleSignIn) return { ok: false, error: 'A sign-in window is already open.' };
+    consoleSignIn = true;
+    try {
+      const electron = { BrowserWindow, session };
+      let result;
+      if (store === 'xbox') result = await consoles.fetchXboxLibrary(await consoles.signInXbox(electron, mainWindow));
+      else if (store === 'psn') result = await consoles.fetchPsnLibrary(npsso || await consoles.signInPlayStation(electron, mainWindow));
+      else throw new Error('Unknown platform.');
+      return { ok: true, ...consoleImporter.preview(store, result) };
+    } catch (error) { return { ok: false, error: error.message }; }
+    finally { consoleSignIn = false; }
+  });
+  ipcMain.handle('consoles:import', async (_event, sessionId, ids) => {
+    try { return { ok: true, entries: await consoleImporter.importBatch(sessionId, ids) }; }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
+  ipcMain.handle('steam:accounts', async () => {
+    try { return { ok: true, accounts: await detectSteamAccounts() }; }
+    catch { return { ok: true, accounts: [] }; }
+  });
+  // `local`: read a detected account's library from the Steam client on this PC (no key, no public profile).
+  ipcMain.handle('steam:preview', async (_event, profile, key, local) => {
+    try { return { ok: true, ...await steamImporter.preview(profile, key, local === true ? readLocalSteamLibrary : null) }; }
     catch (error) { return { ok: false, error: error.message }; }
   });
   ipcMain.handle('steam:match', async (_event, sessionId, ids) => {

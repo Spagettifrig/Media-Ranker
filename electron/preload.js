@@ -59,9 +59,14 @@ contextBridge.exposeInMainWorld('api', {
    * Resolves to { supported, provider, ready, missing }.
    */
   catalogStatus: (libraryKey) => ipcRenderer.invoke('catalog:status', libraryKey),
-  previewSteam: (profile, key) => ipcRenderer.invoke('steam:preview', profile, key),
+  /** Steam accounts signed in on this PC, read from the local Steam install. */
+  steamAccounts: () => ipcRenderer.invoke('steam:accounts'),
+  previewSteam: (profile, key, local) => ipcRenderer.invoke('steam:preview', profile, key, local),
   matchSteam: (sessionId, ids) => ipcRenderer.invoke('steam:match', sessionId, ids),
   importSteam: (sessionId, ids) => ipcRenderer.invoke('steam:import', sessionId, ids),
+  /** 'psn' | 'xbox'. Opens the platform's sign-in window; resolves to { ok, sessionId, games } or { ok: false, error }. */
+  loadConsoleLibrary: (store, npsso) => ipcRenderer.invoke('consoles:load', store, npsso),
+  importConsoleGames: (sessionId, ids) => ipcRenderer.invoke('consoles:import', sessionId, ids),
 
   /**
    * Search the library's online catalog. Resolves to { ok, results } or

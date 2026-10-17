@@ -16,11 +16,42 @@ Electron + React (Vite), packaged with electron-builder into an NSIS installer.
 
 ### Steam library import
 
-Games → **Import Steam** reads a public Steam profile and previews the returned
-games before importing. You can search, select all new games, select played games,
-or select individual titles. Existing Steam IDs / IGDB identities are skipped;
-similar titles are flagged and unchecked, never automatically merged. Re-importing
-does not replace existing notes, ratings, images or playtime.
+Games → **Import Steam** imports a whole public Steam library in one step. If the
+Steam client is installed, the dialog lists the accounts signed in on this PC
+(read from Steam's local `loginusers.vdf`, nothing is sent until you pick one), so
+**Import all from <name>** needs no typing. Those accounts are read straight from
+the Steam client's own files (`appcache/appinfo.vdf` for names,
+`userdata/<id>/config/localconfig.vdf` for playtime, `appcache/librarycache` for
+owned games), so they need no API key and no public profile. Otherwise paste a profile URL; the last
+one used is remembered. **Choose games first** opens the old preview instead, where
+you can search, filter and select individual titles.
+
+Existing Steam IDs / IGDB identities are skipped; similar titles are never
+automatically merged (one-step import leaves them for you to check in the preview).
+Running the import again adds only new games and raises playtime on games that
+came from Steam. It never lowers playtime or touches notes, ratings, images, or
+the playtime of games you added by hand.
+
+### PlayStation and Xbox import
+
+The same dialog has **PlayStation** and **Xbox** tabs. **Sign in and import all**
+opens the platform's own sign-in page in a separate window with a throwaway
+in-memory session; Game Ranker never sees the password. The token is used for
+one read and dropped; nothing is saved. Neither platform has a public library
+API, so these use the private endpoints of the PlayStation App (via the
+`psn-api` package) and the Xbox app's Microsoft sign-in. They are unofficial and
+may break when Sony or Microsoft change them.
+
+- PlayStation imports every PS4/PS5 game played, with playtime and platform tags
+  (PS4/PS5 versions of one game merge). Sony does not list PS3/Vita games here.
+  If the sign-in window fails, a 64-character `npsso` code can be pasted instead.
+- Xbox imports the title history (Xbox 360 to Series X|S and PC) with platform
+  tags. Xbox does not share playtime.
+
+Console imports are skipped on repeat by their PlayStation concept / Xbox title
+ID, and a game whose title already exists (for example from Steam) is skipped
+rather than duplicated. They stay local: IGDB has no reliable link from these
+IDs, so they are not catalog-matched or joined to community reviews.
 
 Imports go into **Unrated**, with playtime in hours and no overall score. Open a
 game, adjust its draft category scores and choose **Finish rating** to move it to
@@ -31,7 +62,7 @@ their ratings. Unrated imports are not cloud backups: retain the local app data.
 IGDB matches use exact Steam app IDs, never fuzzy title guesses. Missing or
 ambiguous matches still import as Steam-only local entries. Steam may omit shared
 games, unplayed free-to-play titles and private details. A public profile does not
-necessarily expose playtime. Imports are a snapshot, not ongoing account sync.
+necessarily expose playtime. Imports are a snapshot; run the import again to sync.
 
 The app owner must deploy `supabase/functions/steam` and configure the server's
 `STEAM_WEB_API_KEY` once to enable keyless imports for users. See

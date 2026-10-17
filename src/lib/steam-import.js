@@ -8,6 +8,7 @@ const titleKey = (value) => String(value ?? '').normalize('NFKD').replace(/[\u03
 export function steamDuplicate(game, items) {
   const exact = items.find((item) =>
     (item.steamAppId && item.steamAppId === game.steamAppId) ||
+    (game.store && game.storeId && item.storeIds?.[game.store] === game.storeId) ||
     (game.provider && game.remoteId && item.provider === game.provider && item.providerId === game.remoteId));
   if (exact) return { kind: 'exact', item: exact };
   const title = titleKey(game.title);
@@ -25,8 +26,27 @@ export function appendSteamEntries(items, entries) {
       title: entry.title, mainImage: entry.file, genres, modes,
       hoursPlayed: entry.hours, provider: entry.provider, providerId: entry.remoteId,
       coverImageUrl: entry.imageUrl, releaseYear: entry.year,
-      steamAppId: entry.steamAppId, unrated: true,
+      steamAppId: entry.steamAppId, unrated: true, platforms: entry.platforms,
+      storeIds: entry.store ? { [entry.store]: entry.storeId } : {},
     }));
   }
   return withRanks(next);
+}
+
+const importKey = (game) => (game.store ? `${game.store}:${game.storeId}` : `steam:${game.steamAppId}`);
+const itemKeys = (item) => [
+  item.steamAppId ? `steam:${item.steamAppId}` : null,
+  ...Object.entries(item.storeIds ?? {}).map(([store, id]) => `${store}:${id}`),
+].filter(Boolean);
+
+/**
+ * Playtime only ever goes up from a fresh library read, and only on items that
+ * came from that library, so a manual correction to a hand-added entry is never touched.
+ */
+export function steamPlaytimeUpdates(items, games) {
+  const hours = new Map(games.filter((game) => typeof game.hours === 'number').map((game) => [importKey(game), game.hours]));
+  return items.flatMap((item) => {
+    const next = itemKeys(item).map((key) => hours.get(key)).find((value) => value !== undefined);
+    return next !== undefined && next > (item.hoursPlayed ?? 0) ? [{ id: item.id, hours: next }] : [];
+  });
 }

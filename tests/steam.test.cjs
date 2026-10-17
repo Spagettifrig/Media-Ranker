@@ -1,11 +1,39 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseProfile, normalizeLibrary, fetchLibrary, createImporter } = require('../electron/steam');
+const { parseProfile, normalizeLibrary, fetchLibrary, createImporter, parseLoginUsers, detectAccounts, parseAppInfo, readLocalLibrary } = require('../electron/steam');
 
 const steamId = '76561198000000000';
 const key = 'a'.repeat(32);
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status });
 const owned = { game_count: 2, games: [{ appid: 400, name: 'Portal', playtime_forever: 95 }, { appid: 570, name: 'Dota 2' }] };
+
+
+const path = require('node:path');
+
+/** Builds a minimal format-29 appinfo.vdf: entries with appinfo.common.{name,type}, then the string table. */
+function appInfoFixture(apps) {
+  const strings = ['appinfo', 'common', 'name', 'type'];
+  const parts = [];
+  const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
+  const str = (s) => Buffer.concat([Buffer.from(s, 'utf8'), Buffer.from([0])]);
+  for (const [id, name, type] of apps) {
+    const kv = Buffer.concat([
+      Buffer.from([0]), u32(0), Buffer.from([0]), u32(1),
+      Buffer.from([1]), u32(2), str(name), Buffer.from([1]), u32(3), str(type),
+      Buffer.from([8, 8, 8]),
+    ]);
+    const body = Buffer.concat([Buffer.alloc(60), kv]);
+    parts.push(u32(id), u32(body.length), body);
+  }
+  parts.push(u32(0));
+  const entries = Buffer.concat(parts);
+  const table = Buffer.concat([u32(strings.length), ...strings.map(str)]);
+  const header = Buffer.alloc(16);
+  header.writeUInt32LE(0x07564429, 0);
+  header.writeUInt32LE(1, 4);
+  header.writeBigInt64LE(BigInt(16 + entries.length), 8);
+  return Buffer.concat([header, entries, table]);
+}
 
 test('parses SteamID64 without converting it to a lossy number', () => {
   assert.deepEqual(parseProfile(` ${steamId} `), { steamId });
@@ -135,4 +163,52 @@ test('IGDB matching checks Steam source and refuses ambiguous identities', async
 test('a truncated IGDB candidate list is not treated as an unambiguous match', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => json(Array.from({ length: 500 }, (_, id) => ({ id, name: 'Game' }))));
   assert.deepEqual(await require('../electron/catalog').steamMatches(['400'], {}), {});
+});
+
+test('detected Steam accounts come from loginusers.vdf, most recent first, with invalid IDs dropped', async () => {
+  const vdf = `"users"\n{\n\t"76561198000000001"\n\t{\n\t\t"AccountName"\t\t"josh"\n\t\t"PersonaName"\t\t"Jo \\"sh\\""\n\t\t"MostRecent"\t\t"0"\n\t\t"Timestamp"\t\t"5"\n\t}\n\t"76561198000000002"\n\t{\n\t\t"AccountName"\t\t"alt"\n\t\t"MostRecent"\t\t"1"\n\t}\n\t"123"\n\t{\n\t}\n}`;
+  assert.deepEqual(parseLoginUsers(vdf).map(({ steamId, name }) => [steamId, name]),
+    [['76561198000000002', 'alt'], ['76561198000000001', 'Jo "sh"']]);
+  const reads = [];
+  const accounts = await detectAccounts({ steamPath: async () => '/steam', readFile: async (file) => {
+    reads.push(file);
+    if (file.startsWith('/steam')) return vdf;
+    throw new Error('missing');
+  } });
+  assert.equal(accounts.length, 2);
+  assert.ok(reads[0].endsWith('loginusers.vdf'));
+  assert.deepEqual(await detectAccounts({ steamPath: async () => null, readFile: async () => { throw new Error('missing'); } }), []);
+  assert.deepEqual(parseLoginUsers('not a vdf {'), []);
+});
+
+test('appinfo.vdf (format 29) yields app names and types', () => {
+  const buffer = appInfoFixture([[440, 'Team Fortress 2', 'Game'], [228980, 'Steamworks Common Redistributables', 'Config'], [570, 'Dota 2', 'game']]);
+  const apps = parseAppInfo(buffer);
+  assert.deepEqual(apps.get('440'), { name: 'Team Fortress 2', type: 'game' });
+  assert.equal(apps.get('228980').type, 'config');
+  assert.equal(apps.size, 3);
+  assert.equal(parseAppInfo(Buffer.from('nope, not appinfo')).size, 0);
+  assert.equal(parseAppInfo(buffer.subarray(0, 40)).size, 0);
+});
+
+test('a detected account library is read from Steam on this PC without a key', async () => {
+  const files = {
+    [path.join('/steam', 'config', 'loginusers.vdf')]: `"users" { "76561199384249694" { "PersonaName" "Spagetti" "MostRecent" "1" } }`,
+    [path.join('/steam', 'appcache', 'appinfo.vdf')]: appInfoFixture([[440, 'Team Fortress 2', 'Game'], [228980, 'Redist', 'Config'], [570, 'Dota 2', 'game'], [620, 'Portal 2', 'Game']]),
+    [path.join('/steam', 'userdata', '1423983966', 'config', 'localconfig.vdf')]:
+      `"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "440" { "playtime" "95" } "228980" { "playtime" "3" } "570" { "LastPlayed" "1" } } } } } }`,
+  };
+  const options = {
+    steamPath: async () => '/steam',
+    readFile: async (file) => { if (file in files) return files[file]; throw new Error('missing'); },
+    readdir: async () => ['620', '440', 'not-an-app'],
+  };
+  const result = await readLocalLibrary('76561199384249694', options);
+  assert.deepEqual(result.games.map((game) => [game.steamAppId, game.title, game.hours]),
+    [['570', 'Dota 2', null], ['620', 'Portal 2', null], ['440', 'Team Fortress 2', 1.6]]);
+  await assert.rejects(readLocalLibrary('76561198000000000', options), /not signed in on this PC/);
+  await assert.rejects(readLocalLibrary('76561199384249694', { ...options, readFile: async (file) => {
+    if (file.endsWith('loginusers.vdf')) return files[file];
+    throw new Error('missing');
+  } }), /Open Steam once/);
 });

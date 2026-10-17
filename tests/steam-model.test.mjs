@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createItem, normalizeItem, withRanks } from '../src/lib/model.js';
-import { appendSteamEntries, steamDuplicate } from '../src/lib/steam-import.js';
+import { appendSteamEntries, steamDuplicate, steamPlaytimeUpdates } from '../src/lib/steam-import.js';
 import { summarize } from '../src/lib/stats.js';
 import { libraryConfig } from '../src/lib/media.js';
 
@@ -63,4 +63,24 @@ test('partition preserves board ranks and assigns a completed import the next ra
   assert.equal(ordered[0].id, rated.id);
   assert.deepEqual(ordered.map((item) => item.rank), [1, 0]);
   assert.deepEqual(withRanks([rated, { ...imported, unrated: false, overallScore: 80 }]).map((item) => item.rank), [1, 2]);
+});
+test('playtime refresh only raises hours on items that came from Steam', () => {
+  const [imported] = appendSteamEntries([], [entry]);
+  const manual = createItem('games', { title: 'Portal', hoursPlayed: 1 });
+  const items = [imported, manual];
+  assert.deepEqual(steamPlaytimeUpdates(items, [{ ...entry, hours: 9 }]), [{ id: imported.id, hours: 9 }]);
+  assert.deepEqual(steamPlaytimeUpdates(items, [{ ...entry, hours: 1 }]), []);
+  assert.deepEqual(steamPlaytimeUpdates(items, [{ ...entry, hours: null }]), []);
+});
+test('console imports are skipped on repeat and keep platform tags across save/reload', () => {
+  const psn = { store: 'psn', storeId: '77', title: 'Astro', hours: 3.5, platforms: ['ps4', 'ps5', 'bogus'], genreNames: [], modeIds: [], file: null };
+  const [item] = appendSteamEntries([], [psn]);
+  const restored = normalizeItem('games', JSON.parse(JSON.stringify(item)), 0);
+  assert.deepEqual(restored.storeIds, { psn: '77' });
+  assert.deepEqual(restored.platforms, ['ps4', 'ps5']);
+  assert.equal(restored.steamAppId, null);
+  assert.equal(appendSteamEntries([restored], [psn]).length, 1);
+  assert.equal(steamDuplicate({ ...psn, store: 'xbox' }, [restored])?.kind, 'possible');
+  assert.deepEqual(steamPlaytimeUpdates([restored], [{ ...psn, hours: 10 }]), [{ id: restored.id, hours: 10 }]);
+  assert.deepEqual(normalizeItem('games', { ...restored, storeIds: { psn: 'bad id!', xbox: '5', other: '1' } }, 0).storeIds, { xbox: '5' });
 });

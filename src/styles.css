@@ -4754,7 +4754,10 @@ kbd {
 .steam-import__heading p, .steam-import__help, .steam-import__footer,
 .steam-collection-switch > span, .unrated-notice p { color: var(--text-dim); font-size: 12px; }
 .steam-import__form { display: grid; gap: 12px; }
-.steam-import__form > .btn { justify-self: start; }
+.steam-import__actions, .steam-import__accounts { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.steam-import__accounts { padding: 14px; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 10px; }
+.steam-import__accounts > .field__label, .steam-import__accounts > .steam-import__help { flex-basis: 100%; }
+.steam-import__platforms { padding: 0; }
 .steam-import__form details { font-size: 12px; color: var(--text-dim); }
 .steam-import__form details .field { margin-top: 12px; }
 .steam-import summary { cursor: pointer; }
