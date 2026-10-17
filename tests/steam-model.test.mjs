@@ -72,3 +72,15 @@ test('playtime refresh only raises hours on items that came from Steam', () => {
   assert.deepEqual(steamPlaytimeUpdates(items, [{ ...entry, hours: 1 }]), []);
   assert.deepEqual(steamPlaytimeUpdates(items, [{ ...entry, hours: null }]), []);
 });
+test('console imports are skipped on repeat and keep platform tags across save/reload', () => {
+  const psn = { store: 'psn', storeId: '77', title: 'Astro', hours: 3.5, platforms: ['ps4', 'ps5', 'bogus'], genreNames: [], modeIds: [], file: null };
+  const [item] = appendSteamEntries([], [psn]);
+  const restored = normalizeItem('games', JSON.parse(JSON.stringify(item)), 0);
+  assert.deepEqual(restored.storeIds, { psn: '77' });
+  assert.deepEqual(restored.platforms, ['ps4', 'ps5']);
+  assert.equal(restored.steamAppId, null);
+  assert.equal(appendSteamEntries([restored], [psn]).length, 1);
+  assert.equal(steamDuplicate({ ...psn, store: 'xbox' }, [restored])?.kind, 'possible');
+  assert.deepEqual(steamPlaytimeUpdates([restored], [{ ...psn, hours: 10 }]), [{ id: restored.id, hours: 10 }]);
+  assert.deepEqual(normalizeItem('games', { ...restored, storeIds: { psn: 'bad id!', xbox: '5', other: '1' } }, 0).storeIds, { xbox: '5' });
+});

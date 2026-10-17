@@ -92,6 +92,7 @@ function mergeCloudItems(localItems, cloudItems) {
       galleryImages: item.galleryImages,
       platforms: item.platforms,
       steamAppId: item.steamAppId,
+      storeIds: item.storeIds,
       rank: item.rank,
     };
   });

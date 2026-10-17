@@ -46,6 +46,20 @@ function normalizeTags(raw, allowed) {
   return allowed.filter((tag) => wanted.has(tag.key)).map((tag) => tag.key);
 }
 
+/**
+ * Console library identities (PlayStation concept / Xbox title IDs), used only
+ * to skip repeat imports. Local to this device, like `steamAppId`.
+ */
+const STORE_ID = /^[A-Za-z0-9_.-]{1,40}$/;
+export function normalizeStoreIds(raw) {
+  const ids = {};
+  for (const store of ['psn', 'xbox']) {
+    const value = String(raw?.[store] ?? '');
+    if (STORE_ID.test(value)) ids[store] = value;
+  }
+  return ids;
+}
+
 /** "Date added" only has to sort; an ISO timestamp is plenty. */
 function normalizeAddedAt(value) {
   if (typeof value !== 'string' || !value) return null;
@@ -106,6 +120,8 @@ export function createItem(
     coverImageUrl = null,
     releaseYear = null,
     steamAppId = null,
+    storeIds = {},
+    platforms = [],
     unrated = false,
   } = {},
 ) {
@@ -123,6 +139,7 @@ export function createItem(
     overallScore: unrated ? null : computeOverall(categoryScores, config.categories),
     unrated: unrated === true,
     steamAppId: /^[1-9]\d{0,9}$/.test(String(steamAppId ?? '')) ? String(steamAppId) : null,
+    storeIds: normalizeStoreIds(storeIds),
     categoryScores,
     disabledCategories: [],
     descriptions: Object.fromEntries(config.descriptionFields.map((d) => [d.key, ''])),
@@ -133,7 +150,7 @@ export function createItem(
     modes: normalizeTags(modes, config.modes),
     // Which console you played it on. Multi-select, because playing Skyrim
     // on both a 360 and a PC is the normal case, not the odd one.
-    platforms: [],
+    platforms: normalizeTags(platforms, config.platforms ?? []),
     addedAt: now,
     // Set only when the item came from a catalog search - see catalog.js /
     // App.jsx's addFromCatalog. A manual (photo) import leaves these null,
@@ -208,6 +225,7 @@ export function normalizeItem(libraryKey, raw, index) {
     overallScore: raw?.unrated === true ? null : computeOverall(categoryScores, config.categories, disabledCategories),
     unrated: raw?.unrated === true,
     steamAppId: /^[1-9]\d{0,9}$/.test(String(raw?.steamAppId ?? '')) ? String(raw.steamAppId) : null,
+    storeIds: normalizeStoreIds(raw?.storeIds),
     categoryScores,
     disabledCategories,
     descriptions,

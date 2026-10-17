@@ -29,6 +29,27 @@ Running the import again adds only new games and raises playtime on games that
 came from Steam. It never lowers playtime or touches notes, ratings, images, or
 the playtime of games you added by hand.
 
+### PlayStation and Xbox import
+
+The same dialog has **PlayStation** and **Xbox** tabs. **Sign in and import all**
+opens the platform's own sign-in page in a separate window with a throwaway
+in-memory session; Game Ranker never sees the password. The token is used for
+one read and dropped; nothing is saved. Neither platform has a public library
+API, so these use the private endpoints of the PlayStation App (via the
+`psn-api` package) and the Xbox app's Microsoft sign-in. They are unofficial and
+may break when Sony or Microsoft change them.
+
+- PlayStation imports every PS4/PS5 game played, with playtime and platform tags
+  (PS4/PS5 versions of one game merge). Sony does not list PS3/Vita games here.
+  If the sign-in window fails, a 64-character `npsso` code can be pasted instead.
+- Xbox imports the title history (Xbox 360 to Series X|S and PC) with platform
+  tags. Xbox does not share playtime.
+
+Console imports are skipped on repeat by their PlayStation concept / Xbox title
+ID, and a game whose title already exists (for example from Steam) is skipped
+rather than duplicated. They stay local: IGDB has no reliable link from these
+IDs, so they are not catalog-matched or joined to community reviews.
+
 Imports go into **Unrated**, with playtime in hours and no overall score. Open a
 game, adjust its draft category scores and choose **Finish rating** to move it to
 the ranked board. Unrated entries are saved locally but excluded from score stats,
