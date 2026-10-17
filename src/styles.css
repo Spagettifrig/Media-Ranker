@@ -1234,6 +1234,17 @@ kbd {
   user-select: none;
 }
 
+/* A perfect 100 - brushed metal rather than a flat yellow swatch, with a white
+ * number. Stops mirror GOLD_STOPS in lib/score.js (used by the image export). */
+.score-badge--gold {
+  background: linear-gradient(135deg, #fbe7a1 0%, #e2b144 28%, #b07f18 50%, #e9be52 72%, #8c640f 100%);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(60, 38, 0, 0.65);
+  border-color: rgba(255, 236, 170, 0.7);
+  box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 250, 225, 0.6),
+    inset 0 -2px 3px rgba(80, 52, 0, 0.35), 0 0 12px rgba(232, 184, 75, 0.45);
+}
+
 .score-badge--sm {
   width: 34px;
   height: 34px;
@@ -1697,6 +1708,29 @@ kbd {
 
 .slider.is-na .slider__value {
   color: var(--text-faint);
+}
+
+/* Perfect 100: metallic gold track, gold-rimmed thumb and a gold number. */
+.slider--gold .slider__input {
+  background: linear-gradient(to right, #8c640f 0%, #e2b144 22%, #fbe7a1 45%, #d9a636 65%, #b07f18 82%, #e9be52 100%);
+  box-shadow: inset 0 1px 1px rgba(255, 250, 225, 0.45), 0 0 10px rgba(232, 184, 75, 0.35);
+}
+
+.slider--gold .slider__input::-webkit-slider-thumb {
+  background: radial-gradient(circle at 35% 30%, #fffaf0 0%, #f6e6b8 60%, #e2b144 100%);
+  border-color: #c8921f;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 10px rgba(232, 184, 75, 0.6);
+}
+
+.slider--gold .slider__value {
+  background: linear-gradient(180deg, #fbe7a1 0%, #e2b144 50%, #b07f18 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.slider--gold .slider__value .slider__pending {
+  color: var(--accent);
 }
 
 .slider__hint {

@@ -21,7 +21,20 @@ export const SCORE_BANDS = [
  * 90-100 bucket in the Stats distribution chart still reads as one band; only
  * scoreBand() special-cases the exact value.
  */
-export const GOLD_BAND = { min: 100, max: 100, name: 'Gold', color: '#E8B84B', ink: '#241900' };
+export const GOLD_BAND = { min: 100, max: 100, name: 'Gold', color: '#E8B84B', ink: '#FFFFFF' };
+
+/**
+ * Stops for the metallic gold used by badges, sliders and the image export at
+ * 100 - a flat swatch of GOLD_BAND.color reads as plain yellow. Dark enough
+ * through the middle that the white number stays legible.
+ */
+export const GOLD_STOPS = [
+  [0, '#FBE7A1'],
+  [0.28, '#E2B144'],
+  [0.5, '#B07F18'],
+  [0.72, '#E9BE52'],
+  [1, '#8C640F'],
+];
 
 export const MIN_SCORE = 1;
 export const MAX_SCORE = 100;

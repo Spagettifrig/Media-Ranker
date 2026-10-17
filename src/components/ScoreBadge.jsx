@@ -1,4 +1,4 @@
-import { clampScore, scoreBand } from '../lib/score.js';
+import { clampScore, isGoldScore, scoreBand } from '../lib/score.js';
 
 /**
  * The circular score badge used on the board. Colour comes from the shared
@@ -10,7 +10,7 @@ export default function ScoreBadge({ value, size = 'md' }) {
 
   return (
     <div
-      className={`score-badge score-badge--${size}`}
+      className={`score-badge score-badge--${size}${isGoldScore(score) ? ' score-badge--gold' : ''}`}
       style={{ '--badge-fill': band.color, '--badge-ink': band.ink }}
       title={`${score} / 100 — ${band.name}`}
     >
