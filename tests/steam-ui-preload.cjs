@@ -33,7 +33,7 @@ window.api = {
   loadConsoleLibrary: async (store) => ({ ok: true, store, sessionId: `console-${store}`, games: consoleGames[store] }),
   importConsoleGames: async (sessionId, ids) => ({ ok: true, entries: consoleGames[sessionId.slice(8)].filter((game) => ids.includes(game.storeId)).map((game) => ({ ...game, file: null })) }),
   steamAccounts: async () => ({ ok: true, accounts: [{ steamId: '76561198000000000', name: 'Fixture Player', mostRecent: true, timestamp: 1 }] }),
-  previewSteam: async (profile) => profile === 'private-user'
+  previewSteam: async (profile, _key, local) => (window.__steamTest.lastLocal = local, profile === 'private-user')
     ? { ok: false, error: 'Steam did not share this library. Set both your profile and Game details to Public, then try again.' }
     : { ok: true, sessionId: 'fixture', steamId: '76561198000000000', games },
   matchSteam: async (_session, ids) => ({ ok: true, games: games.filter((game) => ids.includes(game.steamAppId)) }),

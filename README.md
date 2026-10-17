@@ -19,7 +19,10 @@ Electron + React (Vite), packaged with electron-builder into an NSIS installer.
 Games → **Import Steam** imports a whole public Steam library in one step. If the
 Steam client is installed, the dialog lists the accounts signed in on this PC
 (read from Steam's local `loginusers.vdf`, nothing is sent until you pick one), so
-**Import all from <name>** needs no typing. Otherwise paste a profile URL; the last
+**Import all from <name>** needs no typing. Those accounts are read straight from
+the Steam client's own files (`appcache/appinfo.vdf` for names,
+`userdata/<id>/config/localconfig.vdf` for playtime, `appcache/librarycache` for
+owned games), so they need no API key and no public profile. Otherwise paste a profile URL; the last
 one used is remembered. **Choose games first** opens the old preview instead, where
 you can search, filter and select individual titles.
 

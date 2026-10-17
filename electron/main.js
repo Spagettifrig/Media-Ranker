@@ -7,7 +7,7 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const catalog = require('./catalog.js');
-const { createImporter, detectAccounts: detectSteamAccounts } = require('./steam.js');
+const { createImporter, detectAccounts: detectSteamAccounts, readLocalLibrary: readLocalSteamLibrary } = require('./steam.js');
 const consoles = require('./consoles.js');
 const supabase = require('./supabase.js');
 const awards = require('./awards.js');
@@ -796,8 +796,9 @@ function registerIpc() {
     try { return { ok: true, accounts: await detectSteamAccounts() }; }
     catch { return { ok: true, accounts: [] }; }
   });
-  ipcMain.handle('steam:preview', async (_event, profile, key) => {
-    try { return { ok: true, ...await steamImporter.preview(profile, key) }; }
+  // `local`: read a detected account's library from the Steam client on this PC (no key, no public profile).
+  ipcMain.handle('steam:preview', async (_event, profile, key, local) => {
+    try { return { ok: true, ...await steamImporter.preview(profile, key, local === true ? readLocalSteamLibrary : null) }; }
     catch (error) { return { ok: false, error: error.message }; }
   });
   ipcMain.handle('steam:match', async (_event, sessionId, ids) => {

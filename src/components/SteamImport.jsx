@@ -71,7 +71,9 @@ export default function SteamImport({ items, onImport, onRefreshPlaytime, onClos
     setError(''); setWarning(''); setProgress('Reading your Steam library…');
     stop.current = false;
     setPreview(null); setSelected(new Set());
-    const result = await window.api.previewSteam(value, key);
+    // A detected account reads straight from Steam on this PC: no key or public profile needed.
+    const local = !key.trim() && accounts.some((account) => account.steamId === value.trim());
+    const result = await window.api.previewSteam(value, key, local);
     setKey(''); // Personal keys live only in this request, never in saved settings.
     if (!alive.current) return null;
     if (!result?.ok) throw new Error(result?.error ?? 'Could not load Steam.');
@@ -184,6 +186,7 @@ export default function SteamImport({ items, onImport, onRefreshPlaytime, onClos
         {accounts.length ? <div className="steam-import__accounts" role="group" aria-label="Steam accounts on this PC">
           <span className="field__label">Signed in to Steam on this PC</span>
           {accounts.map((account) => <button key={account.steamId} className="btn btn--primary" disabled={busy} onClick={() => importAll(account.steamId)}>Import all from {account.name}</button>)}
+          <span className="steam-import__help">Read straight from Steam on this PC: no key or public profile needed.</span>
         </div> : null}
         <form className="steam-import__form" onSubmit={(event) => { event.preventDefault(); importAll(); }}>
           <label className="field"><span className="field__label">Steam profile URL or SteamID64</span>

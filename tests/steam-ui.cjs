@@ -109,6 +109,7 @@ async function screenshot(filename) {
   await click('Import all from Fixture Player');
   await until(`document.body.innerText.includes('games added to Unrated.')`);
   assert.ok((await run('document.body.innerText')).includes('Playtime updated for 1 game already in your library.'));
+  assert.equal(await run('window.__steamTest.lastLocal'), true);
   assert.ok((await run('document.body.innerText')).includes('1 game has a similar title'));
   await delay(350);
   saved = await run(`window.__steamTest.getSaved()`);
