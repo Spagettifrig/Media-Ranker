@@ -2,9 +2,10 @@
  * Shared catalog proxy - so nobody has to register a Twitch app to use the app.
  *
  * The IGDB and TMDB credentials live here as Supabase secrets and never ship
- * inside the installer. The desktop app calls this function with the Supabase
- * anon key it already carries; the platform's own JWT check rejects anyone who
- * doesn't have it, which is the same bar as talking to the database.
+ * inside the installer or the website. The desktop app and the website call
+ * this function with the Supabase anon key they already carry; the platform's
+ * own JWT check rejects anyone who doesn't have it, which is the same bar as
+ * talking to the database.
  *
  * Deploying it (see supabase/functions/catalog/README.md for the full walk):
  *
@@ -29,10 +30,23 @@ const TMDB_PATHS = /^\/(?:search\/(?:movie|tv)|(?:movie|tv)\/\d+)$/;
 /** Query params worth forwarding. Everything else is dropped, not rejected. */
 const TMDB_PARAMS = new Set(['query', 'include_adult', 'page', 'language']);
 
+/**
+ * The website calls this from a browser, which asks first (a CORS preflight)
+ * and refuses the answer without these headers. `*` is fine: the function
+ * authenticates with the anon key in the request, never with cookies, so
+ * allowing any origin grants nothing a direct caller does not already have.
+ */
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+  'Access-Control-Max-Age': '86400',
+};
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 }
 
@@ -156,6 +170,7 @@ async function tmdb(payload: Record<string, unknown>) {
  * Entry point
  * ------------------------------------------------------------------ */
 Deno.serve(async (request) => {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (request.method !== 'POST') return json({ error: 'POST only.' }, 405);
 
   let payload: Record<string, unknown>;

@@ -1,0 +1,344 @@
+/* ------------------------------------------------------------------ *
+ * Phones
+ *
+ * The desktop window never gets this narrow (its minimum is 940px), so
+ * everything here only ever applies to the website on a phone or a small
+ * tablet in portrait. Kept in its own file so the desktop layout in
+ * styles.css reads exactly as it did.
+ *
+ * The shape: the sidebar becomes a bottom tab bar, the header scrolls away
+ * while the search/filter bar stays pinned, the board drops to two columns,
+ * and sheets open full screen.
+ * ------------------------------------------------------------------ */
+
+/* Touch screens: a card has to let a swipe scroll the board. Dragging starts
+   on press-and-hold instead (see the TouchSensor in BoardView.jsx). */
+@media (pointer: coarse) {
+  .card {
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+
+  .card:not(.card--dragging):hover {
+    transform: none;
+  }
+
+  .card__frame img {
+    -webkit-user-drag: none;
+  }
+
+  /* Arrow keys and typed scores are a keyboard feature. */
+  .scores__hint {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --nav-height: 58px;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Text inputs below 16px make iOS zoom the whole page on focus. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  .app {
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'main'
+      'nav';
+  }
+
+  .app__main {
+    grid-area: main;
+  }
+
+  /* ---- bottom tab bar ------------------------------------------------ */
+  .sidebar {
+    grid-area: nav;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    gap: 0;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--line-soft);
+    overflow: visible;
+  }
+
+  .sidebar__brand {
+    display: none;
+  }
+
+  /* One evenly spaced row: libraries and tools share the bar as equals. */
+  .sidebar__list,
+  .sidebar__list > li,
+  .sidebar__foot {
+    display: contents;
+  }
+
+  .sidebar__item,
+  .sidebar__tool {
+    position: relative;
+    width: 52px;
+    height: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .sidebar__icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .sidebar__icon svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .sidebar__account-dot {
+    width: 11px;
+    height: 11px;
+  }
+
+  /* A pending friend request still needs to be noticed with the labels gone. */
+  .sidebar__count--alert {
+    display: block;
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    min-width: 18px;
+    padding: 0 5px;
+    font-size: 10.5px;
+    line-height: 18px;
+  }
+
+  /* ---- header ---------------------------------------------------------- */
+  .strip {
+    position: static;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: calc(16px + env(safe-area-inset-top)) 16px 12px;
+  }
+
+  .strip__heading {
+    flex: 1 1 100%;
+  }
+
+  .strip__heading h1 {
+    font-size: 21px;
+  }
+
+  .strip__actions {
+    order: 2;
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -16px;
+    padding: 0 16px 2px;
+  }
+
+  .strip__actions::-webkit-scrollbar,
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .strip__actions > * {
+    flex: none;
+  }
+
+  /* The main action leads, where a thumb finds it without scrolling. */
+  .strip__actions .btn--primary {
+    order: -1;
+  }
+
+  .strip__actions .save-indicator {
+    order: 1;
+  }
+
+  .strip__actions .btn {
+    padding: 8px 14px;
+    font-size: 13.5px;
+    white-space: nowrap;
+  }
+
+  .tabs {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab {
+    flex: 1 0 auto;
+    justify-content: center;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  .tab svg {
+    display: none;
+  }
+
+  /* ---- search & filters ---------------------------------------------- */
+  .filters {
+    padding: 10px 16px 8px;
+  }
+
+  .filters__row {
+    gap: 8px;
+  }
+
+  .search {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  /* The bar stays pinned while the board scrolls under it - except with the
+     filter panel open, which is taller than a phone screen and would cover
+     the board entirely. Then it scrolls away with the page. */
+  .filters:has(.filters__panel) {
+    position: static;
+  }
+
+  /* ---- board --------------------------------------------------------- */
+  .board__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 12px;
+    padding: 10px 16px 32px;
+  }
+
+  /* ---- stats, compare, awards ---------------------------------------- */
+  .stats,
+  .compare,
+  .awards {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px 16px 40px;
+    gap: 18px;
+  }
+
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .tile {
+    padding: 14px 16px;
+  }
+
+  .chart {
+    padding: 18px 16px;
+  }
+
+  /* ---- item detail --------------------------------------------------- */
+  .detail__header {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+  }
+
+  .detail__identity {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .detail__title {
+    font-size: 17px;
+    margin-left: -8px;
+    padding: 6px 8px;
+  }
+
+  .detail__header-actions {
+    margin-left: auto;
+    gap: 10px;
+  }
+
+  .detail__body {
+    padding: 18px 16px 48px;
+    gap: 34px;
+  }
+
+  .stage__frame {
+    min-height: 200px;
+    max-height: 48vh;
+    padding: 8px;
+  }
+
+  .stage__image {
+    max-height: calc(48vh - 16px);
+  }
+
+  /* ---- sheets: full screen ------------------------------------------- */
+  .overlay {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .sheet {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .sheet__head {
+    padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+    z-index: 2;
+  }
+
+  .sheet__body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .sheet__foot {
+    padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .settings__row {
+    flex-wrap: wrap;
+  }
+
+  .settings__row > div:first-child {
+    flex: 1 1 100%;
+  }
+
+  /* A yes/no question is still a small dialog, not a page. */
+  .overlay:has(.sheet--confirm) {
+    padding: 16px;
+    place-items: center;
+  }
+
+  .sheet--confirm {
+    height: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+  }
+
+  /* ---- toast: above the tab bar -------------------------------------- */
+  .toast {
+    bottom: calc(var(--nav-height) + 12px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 24px);
+    width: max-content;
+    border-radius: 18px;
+  }
+}

@@ -4,6 +4,7 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -23,6 +24,21 @@ import TrophyBadge from './TrophyBadge.jsx';
 import { isGoldScore, ordinal } from '../lib/score.js';
 import { genreLabels } from '../lib/media.js';
 import { trophiesFor } from '../lib/awards.js';
+
+/**
+ * The pointer sensor, minus touch. Touch is TouchSensor's job (with a hold
+ * delay); left to this one too, every swipe across a card would start a drag
+ * instead of scrolling.
+ */
+class MousePointerSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: 'onPointerDown',
+      handler: (event, options) =>
+        event.nativeEvent.pointerType !== 'touch' && PointerSensor.activators[0].handler(event, options),
+    },
+  ];
+}
 
 /**
  * The ranking grid.
@@ -64,7 +80,10 @@ export default function BoardView({
 
   const sensors = useSensors(
     // A small drag threshold keeps plain clicks working as "open this item".
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MousePointerSensor, { activationConstraint: { distance: 6 } }),
+    // On a touch screen the same swipe has to scroll the board, so a drag
+    // only starts after pressing and holding a card still for a moment.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -265,6 +284,8 @@ export default function BoardView({
      current selection instead of replacing it. */
   function beginMarquee(event) {
     if (event.button !== 0 || event.target !== gridRef.current) return;
+    // A finger on the gap between cards is scrolling, not selecting.
+    if (event.pointerType === 'touch') return;
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     const base = additive ? new Set(selection) : new Set();
     const origin = { x: event.clientX, y: event.clientY };
