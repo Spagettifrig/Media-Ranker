@@ -16,11 +16,18 @@ Electron + React (Vite), packaged with electron-builder into an NSIS installer.
 
 ### Steam library import
 
-Games → **Import Steam** reads a public Steam profile and previews the returned
-games before importing. You can search, select all new games, select played games,
-or select individual titles. Existing Steam IDs / IGDB identities are skipped;
-similar titles are flagged and unchecked, never automatically merged. Re-importing
-does not replace existing notes, ratings, images or playtime.
+Games → **Import Steam** imports a whole public Steam library in one step. If the
+Steam client is installed, the dialog lists the accounts signed in on this PC
+(read from Steam's local `loginusers.vdf`, nothing is sent until you pick one), so
+**Import all from <name>** needs no typing. Otherwise paste a profile URL; the last
+one used is remembered. **Choose games first** opens the old preview instead, where
+you can search, filter and select individual titles.
+
+Existing Steam IDs / IGDB identities are skipped; similar titles are never
+automatically merged (one-step import leaves them for you to check in the preview).
+Running the import again adds only new games and raises playtime on games that
+came from Steam. It never lowers playtime or touches notes, ratings, images, or
+the playtime of games you added by hand.
 
 Imports go into **Unrated**, with playtime in hours and no overall score. Open a
 game, adjust its draft category scores and choose **Finish rating** to move it to
@@ -31,7 +38,7 @@ their ratings. Unrated imports are not cloud backups: retain the local app data.
 IGDB matches use exact Steam app IDs, never fuzzy title guesses. Missing or
 ambiguous matches still import as Steam-only local entries. Steam may omit shared
 games, unplayed free-to-play titles and private details. A public profile does not
-necessarily expose playtime. Imports are a snapshot, not ongoing account sync.
+necessarily expose playtime. Imports are a snapshot; run the import again to sync.
 
 The app owner must deploy `supabase/functions/steam` and configure the server's
 `STEAM_WEB_API_KEY` once to enable keyless imports for users. See

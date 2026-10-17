@@ -7,7 +7,7 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const catalog = require('./catalog.js');
-const { createImporter } = require('./steam.js');
+const { createImporter, detectAccounts: detectSteamAccounts } = require('./steam.js');
 const supabase = require('./supabase.js');
 const awards = require('./awards.js');
 const { autoUpdater } = require('electron-updater');
@@ -767,6 +767,10 @@ function registerIpc() {
     return catalog.status(String(libraryKey ?? ''), credentials);
   });
 
+  ipcMain.handle('steam:accounts', async () => {
+    try { return { ok: true, accounts: await detectSteamAccounts() }; }
+    catch { return { ok: true, accounts: [] }; }
+  });
   ipcMain.handle('steam:preview', async (_event, profile, key) => {
     try { return { ok: true, ...await steamImporter.preview(profile, key) }; }
     catch (error) { return { ok: false, error: error.message }; }

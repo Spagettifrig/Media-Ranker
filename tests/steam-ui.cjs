@@ -39,11 +39,14 @@ async function screenshot(filename) {
   win.webContents.on('console-message', (_event, level, message) => { if (level === 3) errors.push(message); });
   await win.loadFile(path.join(__dirname, '../dist/index.html'));
   await click('Import Steam');
+  await until(`document.body.innerText.includes('Import all from Fixture Player')`);
+  const startShot = path.join(temp, 'steam-start.png');
+  await screenshot(startShot);
   await profile('private-user');
-  await click('Load library');
+  await click('Choose games first');
   await until(`document.querySelector('[role="alert"]')?.textContent.includes('Game details')`);
   await profile('fixture-user');
-  await click('Load library');
+  await click('Choose games first');
   await until(`document.body.innerText.includes('84 games returned')`);
   assert.equal(await run(`document.querySelectorAll('.steam-import__row').length`), 75);
   assert.equal(await run(`document.querySelector('.steam-import__row input:disabled') !== null`), true);
@@ -86,7 +89,7 @@ async function screenshot(filename) {
   await run(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
   await click('Import Steam');
   await profile('fixture-user');
-  await click('Load library');
+  await click('Choose games first');
   await until(`document.body.innerText.includes('2 already in your library')`);
   // Exercise partial cancellation on a large library; committed batch must survive.
   await click('Clear selection');
@@ -99,8 +102,25 @@ async function screenshot(filename) {
   saved = await run(`window.__steamTest.getSaved()`);
   assert.equal(saved.libraries.games.length, 13);
   assert.equal(await run('window.__steamTest.pushes.length'), 0);
+  // One-step import from the account detected on this PC: adds the rest, refreshes Steam playtime only.
+  await run(`document.querySelector('[aria-label="Close Steam import"]').click()`);
+  await run('window.__steamTest.importDelay = 0; window.__steamTest.bumpDota()');
+  await click('Import Steam');
+  await click('Import all from Fixture Player');
+  await until(`document.body.innerText.includes('games added to Unrated.')`);
+  assert.ok((await run('document.body.innerText')).includes('Playtime updated for 1 game already in your library.'));
+  assert.ok((await run('document.body.innerText')).includes('1 game has a similar title'));
+  await delay(350);
+  saved = await run(`window.__steamTest.getSaved()`);
+  assert.equal(saved.libraries.games.length, 84);
+  assert.equal(saved.libraries.games.find((game) => game.steamAppId === '570').hoursPlayed, 200);
+  assert.equal(saved.libraries.games.find((game) => game.id === 'existing').hoursPlayed, 42);
+  assert.equal(saved.libraries.games.find((game) => game.id === 'manual').hoursPlayed, 42);
+  assert.equal(await run(`localStorage.getItem('steamImport.profile')`), '76561198000000000');
+  await click('Import new games');
+  await until(`document.body.innerText.includes('Your library is up to date')`);
   assert.equal(errors.length, 0, errors.join('\n'));
-  console.log(JSON.stringify({ ok: true, checks: 'private profile, 84-game pagination, selection, import, saved unrated state, excluded stats/compare, finish rating, duplicate retry, partial cancellation', screenshots: [previewShot, path.join(temp, 'steam-unrated.png')] }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: 'private profile, 84-game pagination, selection, import, saved unrated state, excluded stats/compare, finish rating, duplicate retry, partial cancellation, detected account one-step import, playtime refresh, up-to-date rerun', screenshots: [startShot, previewShot, path.join(temp, 'steam-unrated.png')] }, null, 2));
   win.destroy();
   app.exit(0);
 })().catch((error) => { console.error(error); if (win) win.destroy(); app.exit(1); });

@@ -30,3 +30,15 @@ export function appendSteamEntries(items, entries) {
   }
   return withRanks(next);
 }
+
+/**
+ * Playtime only ever goes up from a fresh Steam read, and only on items that
+ * came from Steam, so a manual correction to a non-Steam entry is never touched.
+ */
+export function steamPlaytimeUpdates(items, games) {
+  const hours = new Map(games.filter((game) => typeof game.hours === 'number').map((game) => [game.steamAppId, game.hours]));
+  return items.flatMap((item) => {
+    const next = item.steamAppId ? hours.get(item.steamAppId) : undefined;
+    return next !== undefined && next > (item.hoursPlayed ?? 0) ? [{ id: item.id, hours: next }] : [];
+  });
+}

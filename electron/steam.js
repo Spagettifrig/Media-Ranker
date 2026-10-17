@@ -1,6 +1,10 @@
 'use strict';
 
 const { randomUUID } = require('node:crypto');
+const { execFile } = require('node:child_process');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { SUPABASE_URL, SUPABASE_ANON_KEY } = require('./supabase-config');
 
 const STEAM_ID = /^[1-9]\d{16}$/;
@@ -98,6 +102,59 @@ async function fetchLibrary(input, personalKey = '', fetcher = fetch) {
   return { steamId, games: normalizeLibrary(data?.response) };
 }
 
+/** Minimal reader for Valve's KeyValues text format (loginusers.vdf). */
+function parseVdf(text) {
+  const tokens = String(text ?? '').match(/"(?:[^"\\]|\\.)*"|[{}]/g) ?? [];
+  let i = 0;
+  const read = () => {
+    const node = {};
+    while (i < tokens.length) {
+      const token = tokens[i++];
+      if (token === '}') return node;
+      if (token === '{') continue;
+      const key = token.slice(1, -1);
+      if (tokens[i] === '{') { i++; node[key] = read(); }
+      else if (tokens[i] !== undefined && tokens[i] !== '}') node[key] = tokens[i++].slice(1, -1).replace(/\\(.)/g, '$1');
+    }
+    return node;
+  };
+  return read();
+}
+
+/** Accounts that have signed in to the Steam client on this PC, most recent first. */
+function parseLoginUsers(text) {
+  const users = parseVdf(text).users ?? {};
+  return Object.entries(users).flatMap(([steamId, user]) => {
+    if (!STEAM_ID.test(steamId) || !user || typeof user !== 'object') return [];
+    const name = String(user.PersonaName || user.AccountName || '').trim().slice(0, 64);
+    return [{ steamId, name: name || steamId, mostRecent: user.MostRecent === '1', timestamp: Number(user.Timestamp) || 0 }];
+  }).sort((a, b) => Number(b.mostRecent) - Number(a.mostRecent) || b.timestamp - a.timestamp);
+}
+
+function registrySteamPath() {
+  if (process.platform !== 'win32') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile('reg', ['query', 'HKCU\\Software\\Valve\\Steam', '/v', 'SteamPath'], { timeout: 5000, windowsHide: true },
+      (error, stdout) => resolve(error ? null : stdout.match(/SteamPath\s+REG_SZ\s+(.+)/)?.[1]?.trim() ?? null));
+  });
+}
+
+/** Reads only the local account list; nothing is sent anywhere until the user picks one. */
+async function detectAccounts({ steamPath = registrySteamPath, readFile = fsp.readFile } = {}) {
+  const home = os.homedir();
+  const candidates = [await steamPath()];
+  if (process.platform === 'win32') {
+    candidates.push(path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Steam'),
+      path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Steam'));
+  } else if (process.platform === 'darwin') candidates.push(path.join(home, 'Library/Application Support/Steam'));
+  else candidates.push(path.join(home, '.steam/steam'), path.join(home, '.local/share/Steam'));
+  for (const folder of candidates.filter(Boolean)) {
+    try { return parseLoginUsers(await readFile(path.join(folder, 'config', 'loginusers.vdf'), 'utf8')); }
+    catch { /* try the next location */ }
+  }
+  return [];
+}
+
 /** Preview sessions bind import IDs/metadata to a library actually returned by Steam. */
 function createImporter({ matchGames, download, fetcher = fetch }) {
   const sessions = new Map();
@@ -149,4 +206,4 @@ function createImporter({ matchGames, download, fetcher = fetch }) {
   };
 }
 
-module.exports = { parseProfile, normalizeLibrary, fetchLibrary, createImporter };
+module.exports = { parseProfile, normalizeLibrary, fetchLibrary, createImporter, parseVdf, parseLoginUsers, detectAccounts };

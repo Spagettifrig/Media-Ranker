@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseProfile, normalizeLibrary, fetchLibrary, createImporter } = require('../electron/steam');
+const { parseProfile, normalizeLibrary, fetchLibrary, createImporter, parseLoginUsers, detectAccounts } = require('../electron/steam');
 
 const steamId = '76561198000000000';
 const key = 'a'.repeat(32);
@@ -135,4 +135,20 @@ test('IGDB matching checks Steam source and refuses ambiguous identities', async
 test('a truncated IGDB candidate list is not treated as an unambiguous match', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => json(Array.from({ length: 500 }, (_, id) => ({ id, name: 'Game' }))));
   assert.deepEqual(await require('../electron/catalog').steamMatches(['400'], {}), {});
+});
+
+test('detected Steam accounts come from loginusers.vdf, most recent first, with invalid IDs dropped', async () => {
+  const vdf = `"users"\n{\n\t"76561198000000001"\n\t{\n\t\t"AccountName"\t\t"josh"\n\t\t"PersonaName"\t\t"Jo \\"sh\\""\n\t\t"MostRecent"\t\t"0"\n\t\t"Timestamp"\t\t"5"\n\t}\n\t"76561198000000002"\n\t{\n\t\t"AccountName"\t\t"alt"\n\t\t"MostRecent"\t\t"1"\n\t}\n\t"123"\n\t{\n\t}\n}`;
+  assert.deepEqual(parseLoginUsers(vdf).map(({ steamId, name }) => [steamId, name]),
+    [['76561198000000002', 'alt'], ['76561198000000001', 'Jo "sh"']]);
+  const reads = [];
+  const accounts = await detectAccounts({ steamPath: async () => '/steam', readFile: async (file) => {
+    reads.push(file);
+    if (file.startsWith('/steam')) return vdf;
+    throw new Error('missing');
+  } });
+  assert.equal(accounts.length, 2);
+  assert.ok(reads[0].endsWith('loginusers.vdf'));
+  assert.deepEqual(await detectAccounts({ steamPath: async () => null, readFile: async () => { throw new Error('missing'); } }), []);
+  assert.deepEqual(parseLoginUsers('not a vdf {'), []);
 });

@@ -12,7 +12,7 @@ import SettingsView from './components/SettingsView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import StatsView from './components/StatsView.jsx';
 import SteamImport from './components/SteamImport.jsx';
-import { appendSteamEntries } from './lib/steam-import.js';
+import { appendSteamEntries, steamPlaytimeUpdates } from './lib/steam-import.js';
 import TopStrip from './components/TopStrip.jsx';
 import {
   allImagesOf,
@@ -806,6 +806,19 @@ export default function App() {
     return count;
   }, [accountId]);
 
+  const refreshSteamPlaytime = useCallback((games) => {
+    if (!readyRef.current || loadedAccount.current !== accountId) throw new Error('Account changed. Reopen Steam import.');
+    const updates = new Map(steamPlaytimeUpdates(latest.current.libraries.games ?? [], games).map((update) => [update.id, update.hours]));
+    if (!updates.size) return 0;
+    const updatedAt = new Date().toISOString();
+    setLibraries((prev) => ({ ...prev, games: (prev.games ?? []).map((item) => {
+      if (!updates.has(item.id)) return item;
+      if (!item.unrated && item.provider && item.providerId) pendingReviewPushes.current.add(item.id);
+      return { ...item, hoursPlayed: clampHours(updates.get(item.id)), updatedAt };
+    }) }));
+    return updates.size;
+  }, [accountId]);
+
   const finishRating = useCallback((id) => {
     patchLibrary((list) => withRanks(list.map((item) => {
       if (item.id !== id || !item.unrated) return item;
@@ -1041,7 +1054,7 @@ export default function App() {
       ) : null}
       {showSteam ? (
         <SteamImport key={accountId ?? 'local'} items={libraries.games ?? []}
-          onImport={importSteamEntries} onClose={() => setShowSteam(false)} />
+          onImport={importSteamEntries} onRefreshPlaytime={refreshSteamPlaytime} onClose={() => setShowSteam(false)} />
       ) : null}
       {toast ? (
         <div className={`toast toast--${toast.kind}`} role="status">
