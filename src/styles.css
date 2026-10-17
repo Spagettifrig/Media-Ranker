@@ -612,9 +612,10 @@ kbd {
   color: var(--text);
 }
 
-/* Below the app's minimum width the three groups stop fitting on one line, so
-   the switcher drops to its own row rather than squeezing. */
-@media (max-width: 1000px) {
+/* Title, view switcher and actions only fit on one line in a wide window -
+   below that the title was squeezed to nothing behind the tabs - so the
+   switcher drops to its own row rather than squeezing. */
+@media (max-width: 1400px) {
   .strip {
     flex-wrap: wrap;
     gap: 14px 20px;

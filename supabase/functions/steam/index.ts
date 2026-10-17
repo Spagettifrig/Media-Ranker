@@ -1,10 +1,18 @@
 /** Public-library read only. Deploy with JWT verification enabled (the default).
  * STEAM_WEB_API_KEY is a server secret, never an installer setting. */
-const headers = { 'Content-Type': 'application/json' };
+// CORS so the website can call this from a browser; see catalog/index.ts for why `*` is safe.
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+  'Access-Control-Max-Age': '86400',
+};
+const headers = { ...cors, 'Content-Type': 'application/json' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
 const recent = new Map<string, { count: number; until: number }>();
 
 Deno.serve(async (request: Request) => {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   // Best-effort per-instance throttling; production abuse protection also belongs at the gateway.
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0] ?? 'unknown';

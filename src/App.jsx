@@ -42,6 +42,9 @@ const AUTOSAVE_DELAY_MS = 200;
 const REVIEW_PUSH_DELAY_MS = 600;
 const TOAST_MS = 6000;
 
+/** A phone or tablet: no right-click, and dragging starts on press-and-hold. */
+const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
 /**
  * Bumped whenever a new `reviews` column needs the existing cloud rows
  * rewritten. Stored in settings; a lower stamp triggers one bulk re-push.
@@ -1114,9 +1117,13 @@ export default function App() {
           ? `Put two ${config.items} side by side`
           : items.length === 0
             ? 'Nothing ranked yet'
-            : reorderable
-              ? `${counted} · drag to reorder · right-click for options`
-              : `${counted} · right-click for options`;
+            : TOUCH
+              ? reorderable
+                ? `${counted} · press and hold to reorder`
+                : counted
+              : reorderable
+                ? `${counted} · drag to reorder · right-click for options`
+                : `${counted} · right-click for options`;
 
   return (
     <div className="app">

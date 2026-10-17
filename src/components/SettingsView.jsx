@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { COVER_ASPECT_OPTIONS } from '../lib/settings.js';
 import { LIBRARIES } from '../lib/media.js';
 import { SUPPORT_CONFIGURED, openSupportPage } from '../lib/support.js';
+import { IS_WEB } from '../lib/platform.js';
 import HiddenTitles from './HiddenTitles.jsx';
 import { CoffeeIcon } from './SupporterMark.jsx';
 
@@ -12,7 +13,7 @@ import { CoffeeIcon } from './SupporterMark.jsx';
  * instead. `hint` is the whole setup instruction - there is nowhere else in
  * the app that explains where these come from.
  */
-const CREDENTIAL_FIELDS = [
+const ALL_CREDENTIAL_FIELDS = [
   {
     key: 'tmdbToken',
     label: 'TMDB read access token',
@@ -37,8 +38,17 @@ const CREDENTIAL_FIELDS = [
   },
 ];
 
+/**
+ * Twitch and IGDB refuse requests from web pages, so on the website games
+ * always use the shared catalog and only the TMDB token is offered.
+ */
+const WEB_CREDENTIAL_KEYS = new Set(['tmdbToken']);
+const CREDENTIAL_FIELDS = IS_WEB
+  ? ALL_CREDENTIAL_FIELDS.filter((field) => WEB_CREDENTIAL_KEYS.has(field.key))
+  : ALL_CREDENTIAL_FIELDS;
+
 /** Full walkthroughs for the two credential hints above - one-liners point at where to look, these spell out every click. Nobody needs these to search; they are here for whoever wants their own quota. */
-const CATALOG_SETUP_GUIDES = [
+const ALL_CATALOG_SETUP_GUIDES = [
   {
     title: 'Getting a TMDB token (Movies)',
     steps: [
@@ -58,6 +68,8 @@ const CATALOG_SETUP_GUIDES = [
     ],
   },
 ];
+
+const CATALOG_SETUP_GUIDES = IS_WEB ? ALL_CATALOG_SETUP_GUIDES.slice(0, 1) : ALL_CATALOG_SETUP_GUIDES;
 
 const SHORTCUT_SECTIONS = [
   {
@@ -216,10 +228,9 @@ export default function SettingsView({
               <div>
                 <h3 className="keys__title">Online catalog</h3>
                 <p className="settings__row-desc">
-                  Search works out of the box - these fields are optional. Fill one in to use your
-                  own IGDB or TMDB account instead of the shared one, which is worth doing if
-                  search starts rate limiting. Stored only on this machine, in your local data
-                  file.
+                  {IS_WEB
+                    ? 'Search works out of the box - this field is optional. Fill it in to use your own TMDB account instead of the shared one, which is worth doing if search starts rate limiting. Stored only in this browser.'
+                    : 'Search works out of the box - these fields are optional. Fill one in to use your own IGDB or TMDB account instead of the shared one, which is worth doing if search starts rate limiting. Stored only on this machine, in your local data file.'}
                 </p>
               </div>
               <button
@@ -375,6 +386,25 @@ function SupportSection() {
 function UpdateSection({ appVersion, updateStatus, onCheckForUpdates, onInstallUpdate }) {
   const status = updateStatus?.status ?? 'idle';
   const checking = status === 'checking';
+
+  // A website is updated by deploying it, so there is nothing to check.
+  if (IS_WEB) {
+    return (
+      <section className="settings__section">
+        <h3 className="keys__title">Version</h3>
+        <div className="settings__row">
+          <div>
+            <p className="settings__row-title">
+              {appVersion ? `Version ${appVersion}` : 'Checking version…'}
+            </p>
+            <p className="settings__row-desc">
+              The website updates itself. A new version loads the next time you open it.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="settings__section">

@@ -62,6 +62,40 @@ Produces `release/Game-Ranker-Setup-1.0.0.exe` — a per-user NSIS installer tha
 adds a **Game Ranker** Start Menu entry (right-click → Pin to taskbar) and a
 desktop shortcut. No admin rights needed.
 
+## The website
+
+The same app also builds as a website that works in any browser, including on
+a phone, and can be added to the home screen like an app.
+
+```bash
+npm run dev:web       # dev server on http://localhost:5174
+npm run build:web     # static site in dist-web/
+npm run preview:web   # serve dist-web/ locally to try the real build
+```
+
+`dist-web/` is plain static files with relative paths, so any static host can
+serve it from a domain root or a sub-path. Nothing in it is secret: the only
+key it carries is the Supabase anon key the installer already ships with.
+
+What is different from the desktop app:
+
+- Rankings are saved in the browser (IndexedDB) instead of `data.json`. Each
+  browser has its own copy, so sign in to carry catalog-linked rankings
+  between your PC and your phone, the same way two PCs sync today.
+- Covers from the catalog, the cloud and Steam are shown straight from the
+  provider's image host instead of being downloaded. Photos you add yourself
+  are kept in the browser.
+- Games always use the shared catalog. Twitch and IGDB refuse requests from
+  web pages, so personal IGDB credentials (and personal Steam keys) only work
+  in the desktop app. A personal TMDB token still works.
+- Exporting downloads the image, or opens the share sheet on a phone.
+- There are no update checks: a new deploy loads on the next visit.
+
+The website calls the `catalog` and `steam` Supabase functions from the
+browser, so both need deploying once more after this change to send CORS
+headers (`npx supabase@latest functions deploy catalog --project-ref
+njxypnkamladkjtxging`, and the same for `steam`).
+
 ## How it works
 
 ### Libraries
@@ -388,6 +422,10 @@ src/components/        Sidebar, TopStrip, FilterBar, BoardView, StatsView,
                        TagChips, TrophyBadge, ContextMenu, ScoreSlider,
                        ScoreBadge
 electron/supabase.js   accounts, profiles, review sync
+electron/auth-storage.js  where the desktop keeps its sign-in session
+src/web/api.js         window.api for the website (IndexedDB, browser files)
+src/mobile.css         the phone layout
+vite.web.config.mjs    the website build, its Node shims and service worker
 electron/awards.js     the awards RPCs - functions only, never tables
 supabase/awards.sql    the awards schema, policies and functions
 supabase/supporters.sql  who has bought a coffee, and why it cannot be a
