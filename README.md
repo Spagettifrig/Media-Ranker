@@ -14,6 +14,32 @@ Electron + React (Vite), packaged with electron-builder into an NSIS installer.
 
 ## Running it
 
+### Steam library import
+
+Games → **Import Steam** reads a public Steam profile and previews the returned
+games before importing. You can search, select all new games, select played games,
+or select individual titles. Existing Steam IDs / IGDB identities are skipped;
+similar titles are flagged and unchecked, never automatically merged. Re-importing
+does not replace existing notes, ratings, images or playtime.
+
+Imports go into **Unrated**, with playtime in hours and no overall score. Open a
+game, adjust its draft category scores and choose **Finish rating** to move it to
+the ranked board. Unrated entries are saved locally but excluded from score stats,
+comparisons, ranking exports and review/awards sync. Existing saved items keep
+their ratings. Unrated imports are not cloud backups: retain the local app data.
+
+IGDB matches use exact Steam app IDs, never fuzzy title guesses. Missing or
+ambiguous matches still import as Steam-only local entries. Steam may omit shared
+games, unplayed free-to-play titles and private details. A public profile does not
+necessarily expose playtime. Imports are a snapshot, not ongoing account sync.
+
+The app owner must deploy `supabase/functions/steam` and configure the server's
+`STEAM_WEB_API_KEY` once to enable keyless imports for users. See
+[Steam setup](supabase/functions/steam/README.md). For development, the import
+dialog also accepts a personal Steam Web API key, used once and not saved.
+
+### Development
+
 ```bash
 npm install
 npm run dev
@@ -228,6 +254,41 @@ no commit step to remember (`Enter` commits early, `Esc` cancels).
 Only the category scores can be typed — the overall score is derived, so there
 is nothing to set on the board itself.
 
+### Supporters
+
+**Buy me a coffee**, in Settings and in Account, opens a Buy Me a Coffee page in
+the real browser. Anyone who donates gets a **gold ring** on their avatar and a
+small cup beside their name, wherever other people see them — friends lists,
+search results, community reviews, and their profile. That is the entire
+reward. No feature, no ranking weight, no extra visibility, and nothing behind
+a paywall, which is the difference between a donation and a purchase.
+
+**Why it is not a column on `profiles`.** The anon key ships inside the
+installer, so "update your own profile" would mean "gild your own profile" the
+first time somebody unpacked it. The flag lives in `public.supporters`, a table
+with row level security on and *no policies at all* — which denies every role
+the app can reach. The only writer is a Buy Me a Coffee webhook running as
+`service_role`, a key that lives in Supabase's own environment.
+
+The table is keyed by donor **email**, since a donation happens somewhere
+nobody has a Game Ranker account id. That email never leaves the database:
+`supporter_ids()` joins it to `auth.users` internally and hands back nothing
+but a subset of the ids the caller already had, capped at 200 an call so it
+cannot be turned into "list everyone who has ever donated".
+
+**Setting it up.** Run `supabase/supporters.sql` once in the SQL editor, then
+follow `supabase/functions/bmc-webhook/README.md` — register the page, deploy
+the function with `--no-verify-jwt`, and store the signing secret. Until the
+page URL is filled into `src/lib/support.js`, the button does not render at
+all.
+
+**When the email does not match.** The ring is matched on the address someone
+paid with, so paying with a different address than they signed in with — or
+donating anonymously — grants nothing. Both land in the function logs, and
+`select public.grant_support('them@example.com')` fixes it by hand. There is
+deliberately no in-app claim box: anyone who guessed a donor's address could
+take their badge.
+
 ### Exporting the ranking
 
 **Export** on the filter bar writes the whole ranking as a **PNG** or **JPEG** —
@@ -329,5 +390,7 @@ src/components/        Sidebar, TopStrip, FilterBar, BoardView, StatsView,
 electron/supabase.js   accounts, profiles, review sync
 electron/awards.js     the awards RPCs - functions only, never tables
 supabase/awards.sql    the awards schema, policies and functions
+supabase/supporters.sql  who has bought a coffee, and why it cannot be a
+                       column on profiles
 scripts/make-icon.js   generates build/icon.ico with no image dependencies
 ```

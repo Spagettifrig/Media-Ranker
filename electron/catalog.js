@@ -723,4 +723,25 @@ async function releaseYears(libraryKey, remoteIds, credentials) {
   return provider.years(credentials, ids);
 }
 
-module.exports = { search, detail, status, releaseYears };
+/** Exact Steam app identity only. Multiple IGDB candidates are left unlinked. */
+async function steamMatches(appIds, credentials) {
+  const ids = [...new Set(appIds.map(String).filter((id) => /^[1-9]\d{0,9}$/.test(id)))].slice(0, 50);
+  if (!ids.length) return {};
+  const fields = IGDB_FIELDS.replace(';', ',external_games.uid,external_games.external_game_source.name;');
+  const rows = await igdbQuery(credentials,
+    `${fields} where external_games.uid = (${ids.map((id) => `"${id}"`).join(',')}); limit 500;`);
+  // At the provider ceiling we cannot prove that another candidate was not cut off.
+  if (rows.length >= 500) return {};
+  const candidates = new Map(ids.map((id) => [id, new Map()]));
+  for (const game of rows) {
+    for (const external of game.external_games ?? []) {
+      if (external.external_game_source?.name?.toLowerCase() !== 'steam') continue;
+      const options = candidates.get(String(external.uid));
+      if (options) options.set(String(game.id), { ...fromIgdb(game), provider: 'igdb' });
+    }
+  }
+  return Object.fromEntries([...candidates].filter(([, options]) => options.size === 1)
+    .map(([id, options]) => [id, options.values().next().value]));
+}
+
+module.exports = { search, detail, status, releaseYears, steamMatches };

@@ -105,6 +105,8 @@ export function createItem(
     providerId = null,
     coverImageUrl = null,
     releaseYear = null,
+    steamAppId = null,
+    unrated = false,
   } = {},
 ) {
   const config = libraryConfig(libraryKey);
@@ -118,7 +120,9 @@ export function createItem(
     mainImage,
     galleryImages: [...galleryImages],
     rank: 0,
-    overallScore: computeOverall(categoryScores, config.categories),
+    overallScore: unrated ? null : computeOverall(categoryScores, config.categories),
+    unrated: unrated === true,
+    steamAppId: /^[1-9]\d{0,9}$/.test(String(steamAppId ?? '')) ? String(steamAppId) : null,
     categoryScores,
     disabledCategories: [],
     descriptions: Object.fromEntries(config.descriptionFields.map((d) => [d.key, ''])),
@@ -201,7 +205,9 @@ export function normalizeItem(libraryKey, raw, index) {
     mainImage: typeof raw?.mainImage === 'string' && raw.mainImage ? raw.mainImage : null,
     galleryImages: gallery,
     rank: Number.isFinite(Number(raw?.rank)) ? Number(raw.rank) : index + 1,
-    overallScore: computeOverall(categoryScores, config.categories, disabledCategories),
+    overallScore: raw?.unrated === true ? null : computeOverall(categoryScores, config.categories, disabledCategories),
+    unrated: raw?.unrated === true,
+    steamAppId: /^[1-9]\d{0,9}$/.test(String(raw?.steamAppId ?? '')) ? String(raw.steamAppId) : null,
     categoryScores,
     disabledCategories,
     descriptions,
@@ -263,7 +269,10 @@ export function itemFromReview(libraryKey, review, index = 0) {
 
 /** Board position is the array order; `rank` is kept in sync for the data file. */
 export function withRanks(items) {
-  return items.map((item, index) => (item.rank === index + 1 ? item : { ...item, rank: index + 1 }));
+  const ranked = items.filter((item) => !item.unrated);
+  const unrated = items.filter((item) => item.unrated);
+  return [...ranked.map((item, index) => (item.rank === index + 1 ? item : { ...item, rank: index + 1 })),
+    ...unrated.map((item) => item.rank === 0 ? item : { ...item, rank: 0 })];
 }
 
 /** Every stored image file an item refers to, main first. */

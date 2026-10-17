@@ -48,10 +48,20 @@ contextBridge.exposeInMainWorld('api', {
   showItemInFolder: (filePath) => ipcRenderer.invoke('shell:showItem', filePath),
 
   /**
+   * Open a link in the user's real browser. Resolves to false for anything
+   * not on the main process's allowlist - see EXTERNAL_HOSTS in main.js.
+   * Nothing in the app should ever build one of these from remote data.
+   */
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+
+  /**
    * Which online catalog backs a library, and whether its credentials are set.
    * Resolves to { supported, provider, ready, missing }.
    */
   catalogStatus: (libraryKey) => ipcRenderer.invoke('catalog:status', libraryKey),
+  previewSteam: (profile, key) => ipcRenderer.invoke('steam:preview', profile, key),
+  matchSteam: (sessionId, ids) => ipcRenderer.invoke('steam:match', sessionId, ids),
+  importSteam: (sessionId, ids) => ipcRenderer.invoke('steam:import', sessionId, ids),
 
   /**
    * Search the library's online catalog. Resolves to { ok, results } or
@@ -113,7 +123,12 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('auth:changed', handler);
   },
 
-  /** Resolves to { ok, profile } or { ok: false, error }. */
+  /**
+   * Resolves to { ok, profile } or { ok: false, error }. The profile carries
+   * `isSupporter`, which is read fresh from the database on every call - the
+   * app never stores it, so revoking a badge takes effect on the next sign-in
+   * rather than never.
+   */
   getProfile: () => ipcRenderer.invoke('sync:getProfile'),
 
   /** Sets the profile-wide default visibility for new/inherited reviews. */

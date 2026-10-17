@@ -17,6 +17,7 @@ export default function FilterBar({
   shown,
   onExport,
   exporting,
+  exportDisabled = false,
   searchRef,
 }) {
   const filtered = isFiltered(filters);
@@ -88,7 +89,7 @@ export default function FilterBar({
           {tagCount > 0 ? <span className="btn__badge">{tagCount}</span> : null}
         </button>
 
-        <ExportMenu onExport={onExport} exporting={exporting} />
+        <ExportMenu onExport={onExport} exporting={exporting} disabled={exportDisabled} />
       </div>
 
       {open || tagCount > 0 ? (
@@ -171,7 +172,7 @@ export default function FilterBar({
 }
 
 /** Small popover so PNG and JPEG are one click apart. */
-function ExportMenu({ onExport, exporting }) {
+function ExportMenu({ onExport, exporting, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -196,7 +197,8 @@ function ExportMenu({ onExport, exporting }) {
       <button
         type="button"
         className="btn btn--ghost btn--sm"
-        disabled={exporting}
+        disabled={exporting || disabled}
+        title={disabled ? 'Finish ratings before exporting a ranking' : undefined}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >

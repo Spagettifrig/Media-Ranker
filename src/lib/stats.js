@@ -51,6 +51,7 @@ function tagBreakdown(items, tags, field) {
 }
 
 export function summarize(items, config) {
+  items = items.filter((item) => !item.unrated);
   const scores = items.map((item) => clampScore(item.overallScore));
   const timed = items.filter((item) => typeof item.hoursPlayed === 'number' && item.hoursPlayed > 0);
   const dated = items.filter((item) => Boolean(item.firstPlayed));

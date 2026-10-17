@@ -151,12 +151,14 @@ async function getProfile() {
       .maybeSingle();
     if (error) return { ok: false, error: error.message };
     if (!data) return { ok: false, error: 'Profile not ready yet.' };
+    const supporters = await supporterIds([userId]);
     return {
       ok: true,
       profile: {
         username: data.username,
         displayName: data.display_name,
         defaultVisibility: data.default_visibility,
+        isSupporter: supporters.has(userId),
       },
     };
   } catch (err) {
@@ -222,6 +224,44 @@ async function updateUsername(username) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Supporters.
+ *
+ * Whether someone has bought the developer a coffee. It is drawn as a gold
+ * ring and buys nothing else - see supabase/supporters.sql, which is also
+ * where the reason it cannot be a column on `profiles` is written down.
+ *
+ * Read as a second query rather than joined into the calls below, because
+ * most of those are SECURITY DEFINER RPCs whose return type would have to be
+ * dropped and recreated to gain a column - a migration with real downtime on
+ * a live database, in exchange for saving a round trip on decoration.
+ * ------------------------------------------------------------------ */
+
+/** Matches the array cap inside supporter_ids(); past it the server returns nothing. */
+const SUPPORTER_LOOKUP_LIMIT = 200;
+
+/**
+ * Which of these user ids are supporters, as a Set. Never throws and never
+ * reports failure upwards: the badge is decoration and the reviews it sits
+ * next to are not, so a database that has not had supporters.sql run against
+ * it yet renders a profile with no ring rather than an error.
+ */
+async function supporterIds(ids) {
+  try {
+    const unique = [...new Set((ids ?? []).filter(Boolean))].slice(0, SUPPORTER_LOOKUP_LIMIT);
+    if (unique.length === 0) return new Set();
+    const { data, error } = await getClient().rpc('supporter_ids', { p_ids: unique });
+    if (error) {
+      console.warn('[supporters]', error.message);
+      return new Set();
+    }
+    return new Set((data ?? []).map((row) => row.id));
+  } catch (err) {
+    console.warn('[supporters]', err.message);
+    return new Set();
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Friends.
  *
  * Every one of these is a SECURITY DEFINER function in social.sql rather
@@ -242,6 +282,15 @@ function toPerson(row) {
   };
 }
 
+/**
+ * `.map(toPerson)` with the supporter ring folded in. Curried rather than a
+ * second argument to toPerson, because `.map` passes an index as the second
+ * argument and would otherwise hand it a number where a Set belongs.
+ */
+function toPersonWith(supporters) {
+  return (row) => ({ ...toPerson(row), isSupporter: supporters.has(row.id) });
+}
+
 async function searchProfiles(query) {
   try {
     const session = await getSession();
@@ -254,9 +303,13 @@ async function searchProfiles(query) {
 
     const { data, error } = await getClient().rpc('search_profiles', { p_query: trimmed });
     if (error) return { ok: false, error: error.message };
+
+    const rows = data ?? [];
+    const supporters = await supporterIds(rows.map((row) => row.id));
+    const person = toPersonWith(supporters);
     return {
       ok: true,
-      results: (data ?? []).map((row) => ({ ...toPerson(row), friendStatus: row.friend_status })),
+      results: rows.map((row) => ({ ...person(row), friendStatus: row.friend_status })),
     };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -330,11 +383,16 @@ async function fetchFriends() {
     if (requestsResult.error) return { ok: false, error: requestsResult.error.message };
 
     const requests = requestsResult.data ?? [];
+    const friends = friendsResult.data ?? [];
+    // One lookup for all three lists - they are drawn on the same screen and
+    // a person can legitimately appear in only one of them.
+    const supporters = await supporterIds([...friends, ...requests].map((row) => row.id));
+    const person = toPersonWith(supporters);
     return {
       ok: true,
-      friends: (friendsResult.data ?? []).map(toPerson),
-      incoming: requests.filter((row) => row.direction === 'incoming').map(toPerson),
-      outgoing: requests.filter((row) => row.direction === 'outgoing').map(toPerson),
+      friends: friends.map(person),
+      incoming: requests.filter((row) => row.direction === 'incoming').map(person),
+      outgoing: requests.filter((row) => row.direction === 'outgoing').map(person),
     };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -503,6 +561,7 @@ async function fetchReviewBlocks() {
 }
 
 async function pushReview(libraryKey, item) {
+  if (item?.unrated) return { ok: true, skipped: true };
   if (!item?.provider || !item?.providerId) return { ok: false, error: 'No catalog identity.' };
   try {
     const session = await getSession();
@@ -538,7 +597,7 @@ async function pushReviews(libraryKey, items) {
     if (!userId) return { ok: false, error: 'Not signed in.' };
 
     const rows = (items ?? [])
-      .filter((item) => item?.provider && item?.providerId)
+      .filter((item) => !item?.unrated && item?.provider && item?.providerId)
       .map((item) => reviewRow(libraryKey, item, userId));
     if (rows.length === 0) return { ok: true, pushed: 0 };
 
@@ -606,12 +665,14 @@ async function fetchPublicReviews(provider, providerId) {
     if (profilesError) return { ok: false, error: profilesError.message };
 
     const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
+    const supporters = await supporterIds(userIds);
     return {
       ok: true,
       reviews: reviews.map((r) => ({
         id: r.id,
         userId: r.user_id,
         displayName: byId.get(r.user_id)?.display_name ?? byId.get(r.user_id)?.username ?? 'Anonymous',
+        isSupporter: supporters.has(r.user_id),
         libraryKey: r.library_key,
         overallScore: r.overall_score,
         overallNote: r.notes?.overall ?? '',
@@ -695,10 +756,12 @@ async function fetchProfileReviews(userId) {
       .order('updated_at', { ascending: false });
     if (error) return { ok: false, error: error.message };
 
+    const supporters = await supporterIds([userId]);
     return {
       ok: true,
       displayName: profile?.display_name ?? profile?.username ?? 'Anonymous',
       username: profile?.username ?? '',
+      isSupporter: supporters.has(userId),
       reviews: (reviews ?? []).map((r) => ({
         id: r.id,
         libraryKey: r.library_key,

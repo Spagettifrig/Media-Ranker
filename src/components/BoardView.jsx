@@ -512,6 +512,7 @@ function cardClass({ isDragging, isMenuTarget, isSelected }) {
 }
 
 function cardLabel(item, position) {
+  if (item.unrated) return `${item.title}, unrated`;
   return `${item.title}, ranked ${ordinal(position)}, score ${item.overallScore}`;
 }
 
@@ -626,7 +627,7 @@ function CardBody({ item, config, trophies, position }) {
             <ImageIcon />
           </div>
         )}
-        <span className="card__position">{ordinal(position)}</span>
+        <span className="card__position">{item.unrated ? 'Unrated' : ordinal(position)}</span>
         {won.length > 0 ? (
           <span className="card__trophies">
             <TrophyBadge trophies={won} />
@@ -634,7 +635,7 @@ function CardBody({ item, config, trophies, position }) {
         ) : null}
       </div>
       <div className="card__meta">
-        <ScoreBadge value={item.overallScore} />
+        {item.unrated ? <span className="unrated-badge" aria-label="Not rated">—</span> : <ScoreBadge value={item.overallScore} />}
         <span className="card__text">
           <span className="card__title" title={item.title}>
             {item.title}

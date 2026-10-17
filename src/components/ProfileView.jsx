@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReviewBreakdown, { firstCategoryNote } from './ReviewBreakdown.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
+import SupporterMark from './SupporterMark.jsx';
 import { scoreBand } from '../lib/score.js';
 import { firstSentences, profileSummary } from '../lib/social.js';
 
@@ -22,6 +23,9 @@ export default function ProfileView({ target, onClose }) {
   const [error, setError] = useState(null);
   const [displayName, setDisplayName] = useState(target?.displayName ?? '');
   const [username, setUsername] = useState(target?.username ?? '');
+  // Seeded from wherever the sheet was opened, so the ring does not appear a
+  // beat after the name does, then confirmed by the fetch below.
+  const [isSupporter, setIsSupporter] = useState(Boolean(target?.isSupporter));
   const [reviews, setReviews] = useState([]);
   /** false = the summary panel; true = the full list, in its place. */
   const [showAll, setShowAll] = useState(false);
@@ -48,6 +52,7 @@ export default function ProfileView({ target, onClose }) {
       }
       setDisplayName(response.displayName);
       setUsername(response.username ?? '');
+      setIsSupporter(Boolean(response.isSupporter));
       setReviews(response.reviews ?? []);
     });
     return () => {
@@ -131,6 +136,7 @@ export default function ProfileView({ target, onClose }) {
             <Summary
               displayName={displayName}
               username={username}
+              isSupporter={isSupporter}
               summary={summary}
               onShowMore={() => setShowAll(true)}
               onOpenReview={setOpenReviewId}
@@ -150,7 +156,7 @@ function libraryMeta(library) {
   return library.average === null ? shared : `${shared} · ${library.average} average`;
 }
 
-function Summary({ displayName, username, summary, onShowMore, onOpenReview }) {
+function Summary({ displayName, username, isSupporter, summary, onShowMore, onOpenReview }) {
   // "Show more" only earns its place when the top-three lists are actually
   // hiding something - otherwise the summary already is the full list.
   const shown = summary.libraries.reduce((count, library) => count + library.top.length, 0);
@@ -158,13 +164,19 @@ function Summary({ displayName, username, summary, onShowMore, onOpenReview }) {
 
   return (
     <>
-      <div className="profile__summary">
-        <div className="profile__avatar" aria-hidden="true">
+      <div className={`profile__summary${isSupporter ? ' profile__summary--supporter' : ''}`}>
+        <div className={`profile__avatar${isSupporter ? ' is-supporter' : ''}`} aria-hidden="true">
           {(displayName || '?').slice(0, 1).toUpperCase()}
         </div>
         <div className="profile__identity">
-          <p className="profile__name">{displayName || 'Anonymous'}</p>
+          <p className="profile__name">
+            {displayName || 'Anonymous'}
+            <SupporterMark isSupporter={isSupporter} size="lg" />
+          </p>
           {username ? <p className="profile__username">@{username}</p> : null}
+          {/* Said in words as well as in gold: the ring alone reads as
+              decoration, and nobody would guess what it meant. */}
+          {isSupporter ? <p className="profile__supporter">Supporter</p> : null}
         </div>
       </div>
 

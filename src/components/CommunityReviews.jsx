@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import ReviewBreakdown, { firstCategoryNote, hasBreakdown } from './ReviewBreakdown.jsx';
 import ScoreBadge from './ScoreBadge.jsx';
+import SupporterMark from './SupporterMark.jsx';
 import { firstSentences, isTruncated } from '../lib/social.js';
 
 /**
@@ -88,10 +89,17 @@ function CommunityCard({ review, libraryKey, onOpenProfile }) {
       <div className="community__card-head">
         <button
           type="button"
-          className="community__reviewer"
-          onClick={() => onOpenProfile({ id: review.userId, displayName: review.displayName })}
+          className={`community__reviewer${review.isSupporter ? ' is-supporter' : ''}`}
+          onClick={() =>
+            onOpenProfile({
+              id: review.userId,
+              displayName: review.displayName,
+              isSupporter: review.isSupporter,
+            })
+          }
         >
           {review.displayName}
+          <SupporterMark isSupporter={review.isSupporter} />
         </button>
         <ScoreBadge value={review.overallScore} size="sm" />
       </div>

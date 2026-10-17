@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { COVER_ASPECT_OPTIONS } from '../lib/settings.js';
 import { LIBRARIES } from '../lib/media.js';
+import { SUPPORT_CONFIGURED, openSupportPage } from '../lib/support.js';
 import HiddenTitles from './HiddenTitles.jsx';
+import { CoffeeIcon } from './SupporterMark.jsx';
 
 /**
  * Optional overrides for the shared catalog service. Search works without any
@@ -275,6 +277,8 @@ export default function SettingsView({
             onInstallUpdate={onInstallUpdate}
           />
 
+          <SupportSection />
+
           <section className="settings__section">
             <h3 className="keys__title">Keyboard shortcuts</h3>
             <div className="settings__keys">
@@ -325,6 +329,41 @@ export default function SettingsView({
   );
 }
 
+
+/**
+ * The one place someone who has never signed in can find the donate button.
+ *
+ * Account settings has its own version of this that knows whether you are
+ * already a supporter; this one cannot, because the badge belongs to an
+ * account and this sheet is reachable without one. So it says what the ring
+ * is and where to get it, rather than claiming anything about the reader.
+ */
+function SupportSection() {
+  if (!SUPPORT_CONFIGURED) return null;
+
+  return (
+    <section className="settings__section">
+      <h3 className="keys__title">Support</h3>
+      <div className="settings__row">
+        <div>
+          <p className="settings__row-title">Buy me a coffee</p>
+          <p className="settings__row-desc">
+            Game Ranker is free, has no ads, and sells nothing. If you would like to chip in,
+            supporters get a gold ring on their profile — that is the whole of it, and every
+            feature stays the same for everyone either way.
+          </p>
+          <p className="settings__row-desc">
+            The ring needs an account to sit on, and is matched to the email you pay with.
+          </p>
+        </div>
+        <button type="button" className="btn btn--gold btn--sm" onClick={openSupportPage}>
+          <CoffeeIcon size={14} />
+          Buy me a coffee
+        </button>
+      </div>
+    </section>
+  );
+}
 
 /**
  * The app already checks for updates on its own - at launch and every four

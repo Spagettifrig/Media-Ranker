@@ -46,6 +46,7 @@ export default function DetailView({
   user,
   onVisibilityChange,
   onOpenProfile,
+  onFinishRating,
 }) {
   const images = allImagesOf(item);
   const won = trophiesFor(trophies, item);
@@ -217,7 +218,7 @@ export default function DetailView({
         </button>
 
         <div className="detail__identity">
-          <span className="detail__rank">{ordinal(position)}</span>
+          <span className="detail__rank">{item.unrated ? 'Unrated' : ordinal(position)}</span>
           <input
             className="detail__title"
             value={item.title}
@@ -450,7 +451,12 @@ export default function DetailView({
         </section>
 
         <section className="scores" aria-label="Scores">
-          <ScoreSlider
+          {item.unrated ? (
+            <div className="unrated-notice">
+              <div><h3>Unrated — your scores are a draft</h3><p>Adjust the categories below, then finish your rating. Until then, this game stays out of rankings, statistics and community reviews.</p></div>
+              <button className="btn btn--primary" disabled={enabledCount === 0} onClick={onFinishRating}>Finish rating</button>
+            </div>
+          ) : <ScoreSlider
             label="Overall Score"
             value={item.overallScore}
             variant="overall"
@@ -462,7 +468,7 @@ export default function DetailView({
                   } marked N/A`
                 : `Average of the ${categories.length} categories below`
             }
-          />
+          />}
 
           <div className="scores__grid">
             {categories.map((category, i) => (
@@ -502,7 +508,7 @@ export default function DetailView({
           ))}
         </section>
 
-        {user && item.provider && item.providerId ? (
+        {user && !item.unrated && item.provider && item.providerId ? (
           <section className="sharing" aria-label="Sharing">
             <div className="settings__row">
               <div>

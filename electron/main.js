@@ -7,6 +7,7 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const catalog = require('./catalog.js');
+const { createImporter } = require('./steam.js');
 const supabase = require('./supabase.js');
 const awards = require('./awards.js');
 const { autoUpdater } = require('electron-updater');
@@ -57,6 +58,13 @@ protocol.registerSchemesAsPrivileged([
 
 /** The only hosts catalogimg:// will fetch from. */
 const CATALOG_IMAGE_HOSTS = new Set(['images.igdb.com', 'image.tmdb.org']);
+
+/**
+ * The only hosts `shell:openExternal` will hand to the OS browser. Every
+ * link the app offers is one of these; see the handler for why the list
+ * exists rather than any https URL being fine.
+ */
+const EXTERNAL_HOSTS = new Set(['buymeacoffee.com', 'www.buymeacoffee.com']);
 
 /** catalogimg://<host>/<path> -> the https URL it stands for, or null. */
 function resolveCatalogImageRequest(requestUrl) {
@@ -266,6 +274,7 @@ async function copyIntoLibrary(sourcePaths) {
 const CREDENTIAL_KEYS = ['tmdbToken', 'twitchClientId', 'twitchClientSecret'];
 
 let credentials = {};
+const steamImporter = createImporter({ matchGames: catalog.steamMatches, download: downloadIntoLibrary });
 
 function rememberCredentials(settings) {
   const next = {};
@@ -283,13 +292,25 @@ const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 async function downloadIntoLibrary(url) {
   let response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, { signal: AbortSignal.timeout(12000) });
   } catch {
     return null;
   }
   if (!response.ok) return null;
 
-  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!response.headers.get('content-type')?.startsWith('image/')) return null;
+  if (Number(response.headers.get('content-length')) > MAX_IMAGE_BYTES) { await response.body?.cancel(); return null; }
+  let buffer;
+  try {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > MAX_IMAGE_BYTES) return null;
+      chunks.push(chunk);
+    }
+    buffer = Buffer.concat(chunks);
+  } catch { return null; }
   if (buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) return null;
 
   const type = response.headers.get('content-type') ?? '';
@@ -715,6 +736,28 @@ function registerIpc() {
     return true;
   });
 
+  /*
+   * Hand a link to the real browser. The allowlist is the point: this is the
+   * one channel that turns a string from the renderer into "the OS opens
+   * this", and shell.openExternal will happily open a `file:` path or a
+   * registered protocol handler as well as a web page. Anything the app
+   * actually links to is one of these hosts, so narrowing it costs nothing
+   * and closes the whole category.
+   */
+  ipcMain.handle('shell:openExternal', async (_event, url) => {
+    if (typeof url !== 'string' || url.length > 2000) return false;
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+    if (parsed.protocol !== 'https:') return false;
+    if (!EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase())) return false;
+    await shell.openExternal(parsed.toString());
+    return true;
+  });
+
   /* ---- online catalog ---------------------------------------------- *
    * These three never throw at the renderer: a failed lookup is a normal
    * thing (offline, bad key, rate limit) and the UI shows the message
@@ -722,6 +765,19 @@ function registerIpc() {
    * ------------------------------------------------------------------ */
   ipcMain.handle('catalog:status', async (_event, libraryKey) => {
     return catalog.status(String(libraryKey ?? ''), credentials);
+  });
+
+  ipcMain.handle('steam:preview', async (_event, profile, key) => {
+    try { return { ok: true, ...await steamImporter.preview(profile, key) }; }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
+  ipcMain.handle('steam:match', async (_event, sessionId, ids) => {
+    try { return { ok: true, games: await steamImporter.match(sessionId, ids, credentials) }; }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
+  ipcMain.handle('steam:import', async (_event, sessionId, ids) => {
+    try { return { ok: true, entries: await steamImporter.importBatch(sessionId, ids) }; }
+    catch (error) { return { ok: false, error: error.message }; }
   });
 
   ipcMain.handle('catalog:search', async (_event, libraryKey, query) => {

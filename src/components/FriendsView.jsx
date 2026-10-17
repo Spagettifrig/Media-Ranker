@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import SupporterMark from './SupporterMark.jsx';
 
 const SEARCH_DEBOUNCE_MS = 300;
 /** Matches search_profiles()' own guard - below this the server returns nothing. */
@@ -318,14 +319,27 @@ function Person({ person, action, onOpenProfile }) {
       <button
         type="button"
         className="people__identity"
-        onClick={() => onOpenProfile({ id: person.id, displayName: person.displayName, username: person.username })}
+        onClick={() =>
+          onOpenProfile({
+            id: person.id,
+            displayName: person.displayName,
+            username: person.username,
+            isSupporter: person.isSupporter,
+          })
+        }
         title={`View ${person.displayName}'s profile`}
       >
-        <span className="people__avatar" aria-hidden="true">
+        <span
+          className={`people__avatar${person.isSupporter ? ' is-supporter' : ''}`}
+          aria-hidden="true"
+        >
           {(person.displayName || '?').slice(0, 1).toUpperCase()}
         </span>
         <span className="people__text">
-          <span className="people__name">{person.displayName}</span>
+          <span className="people__name">
+            {person.displayName}
+            <SupporterMark isSupporter={person.isSupporter} />
+          </span>
           {person.username ? <span className="people__username">@{person.username}</span> : null}
         </span>
       </button>

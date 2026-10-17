@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { CoffeeIcon } from './SupporterMark.jsx';
+import { SUPPORT_CONFIGURED, openSupportPage } from '../lib/support.js';
 
 /**
  * Account settings, in their own sheet.
@@ -137,6 +139,54 @@ function UsernameRow({ profile, onUsernameChange }) {
   );
 }
 
+/**
+ * Buying the developer a coffee, and what it gets you.
+ *
+ * Two states rather than a hidden button once you have donated: a supporter
+ * should be able to see that the app knows, and should still be able to do it
+ * again if they want to. Neither state promises a feature - see
+ * src/lib/support.js for why the ring is the whole of it.
+ *
+ * The badge itself is granted by the payment webhook and matched on email, so
+ * there is a gap between paying and the ring appearing (a page refresh's
+ * worth, usually) and a case where it never appears at all: paying with a
+ * different address than you signed in with. The copy says both out loud,
+ * because a badge that silently does not turn up reads as a broken payment.
+ */
+function SupporterRow({ profile }) {
+  // Nothing to point at until the Buy Me a Coffee page exists. Better an
+  // absent row than a button that opens a 404 in someone's browser.
+  if (!SUPPORT_CONFIGURED) return null;
+
+  const isSupporter = Boolean(profile?.isSupporter);
+
+  return (
+    <div className="settings__row">
+      <div>
+        <p className="settings__row-title">
+          {isSupporter ? 'Supporter — thank you' : 'Buy me a coffee'}
+        </p>
+        <p className="settings__row-desc">
+          {isSupporter
+            ? 'Your profile carries a gold ring wherever other people see it. That is all it does — every feature in the app is the same for everyone.'
+            : 'Game Ranker is free and stays free. If it has been worth something to you, a coffee is welcome — supporters get a gold ring on their profile and nothing else.'}
+        </p>
+        {!isSupporter ? (
+          <p className="settings__row-desc">
+            The ring is matched to the email you pay with, so use{' '}
+            {profile ? 'the address you signed in with' : 'your account address'} if you want it.
+            It can take a minute to appear.
+          </p>
+        ) : null}
+      </div>
+      <button type="button" className="btn btn--gold btn--sm" onClick={openSupportPage}>
+        <CoffeeIcon size={14} />
+        {isSupporter ? 'Buy another' : 'Buy me a coffee'}
+      </button>
+    </div>
+  );
+}
+
 function AccountBody({
   user,
   onSignUp,
@@ -179,6 +229,8 @@ function AccountBody({
         </div>
 
         <UsernameRow profile={profile} onUsernameChange={onUsernameChange} />
+
+        <SupporterRow profile={profile} />
 
         <div className="settings__row">
           <div>

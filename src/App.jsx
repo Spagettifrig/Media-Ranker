@@ -11,6 +11,8 @@ import ProfileView from './components/ProfileView.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import StatsView from './components/StatsView.jsx';
+import SteamImport from './components/SteamImport.jsx';
+import { appendSteamEntries } from './lib/steam-import.js';
 import TopStrip from './components/TopStrip.jsx';
 import {
   allImagesOf,
@@ -89,6 +91,7 @@ function mergeCloudItems(localItems, cloudItems) {
       mainImage: item.mainImage ?? cloud.mainImage,
       galleryImages: item.galleryImages,
       platforms: item.platforms,
+      steamAppId: item.steamAppId,
       rank: item.rank,
     };
   });
@@ -121,6 +124,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [showSteam, setShowSteam] = useState(false);
+  const [showUnrated, setShowUnrated] = useState(false);
   const [toast, setToast] = useState(null);
   const [user, setUser] = useState(null); // null = signed out; never written to data.json
   const [authResolved, setAuthResolved] = useState(false);
@@ -242,6 +247,25 @@ export default function App() {
   }, [user]);
 
   /**
+   * Re-read the profile every time the Account sheet opens.
+   *
+   * The supporter badge is granted by a payment webhook minutes after someone
+   * clicks the donate button, and nothing tells the app when that lands.
+   * Without this, the ring would not appear until the next sign-in - so the
+   * one screen where somebody actually looks for it re-asks on the way in.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    if (!user || !showAccount) return undefined;
+    window.api.getProfile().then((response) => {
+      if (!cancelled && response?.ok) setProfile(response.profile);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, showAccount]);
+
+  /**
    * One-time full re-push after the awards upgrade.
    *
    * `first_played` never used to leave the device, so every row already in
@@ -265,7 +289,7 @@ export default function App() {
     (async () => {
       for (const entry of LIBRARIES) {
         const items = latest.current.libraries[entry.key] ?? [];
-        const catalogued = items.filter((item) => item.provider && item.providerId);
+        const catalogued = items.filter((item) => !item.unrated && item.provider && item.providerId);
         if (catalogued.length === 0) continue;
         const response = await window.api.pushReviews(entry.key, catalogued);
         // Leave the stamp unset on failure so the next launch tries again.
@@ -505,7 +529,7 @@ export default function App() {
         for (const entry of LIBRARIES) {
           const item = latest.current.libraries[entry.key]?.find((candidate) => candidate.id === id);
           if (!item) continue;
-          if (item.provider && item.providerId) window.api.pushReview(entry.key, item);
+          if (!item.unrated && item.provider && item.providerId) window.api.pushReview(entry.key, item);
           break;
         }
       }
@@ -547,7 +571,7 @@ export default function App() {
         list.map((item) => {
           if (item.id !== id) return item;
           const next = { ...item, ...patch(item), updatedAt: new Date().toISOString() };
-          if (next.provider && next.providerId) pendingReviewPushes.current.add(id);
+          if (!next.unrated && next.provider && next.providerId) pendingReviewPushes.current.add(id);
           return next;
         }),
       );
@@ -563,7 +587,7 @@ export default function App() {
         const categoryScores = { ...item.categoryScores, [key]: clampScore(value) };
         return {
           categoryScores,
-          overallScore: computeOverall(categoryScores, config.categories, item.disabledCategories),
+          overallScore: item.unrated ? null : computeOverall(categoryScores, config.categories, item.disabledCategories),
         };
       }),
     [patchItem, config],
@@ -576,7 +600,7 @@ export default function App() {
         const disabledCategories = toggleTag(item.disabledCategories, key, config.categories);
         return {
           disabledCategories,
-          overallScore: computeOverall(item.categoryScores, config.categories, disabledCategories),
+          overallScore: item.unrated ? null : computeOverall(item.categoryScores, config.categories, disabledCategories),
         };
       }),
     [patchItem, config],
@@ -622,7 +646,7 @@ export default function App() {
   );
 
   const reorder = useCallback(
-    (nextOrder) => patchLibrary(() => withRanks(nextOrder)),
+    (nextOrder) => patchLibrary((list) => withRanks([...nextOrder, ...list.filter((item) => item.unrated)])),
     [patchLibrary],
   );
 
@@ -637,6 +661,7 @@ export default function App() {
     try {
       const picked = await window.api.pickImages();
       if (!picked || picked.length === 0) return;
+      setShowUnrated(false);
       const created = picked.map((entry) =>
         createItem(library, {
           title: titleFromFileName(entry.sourceName),
@@ -667,6 +692,7 @@ export default function App() {
       if (!response?.ok) return response?.error ?? 'Could not add that one.';
 
       const { entry } = response;
+      setShowUnrated(false);
       const { genres, modes } = config.catalog.tags(entry);
       const created = createItem(library, {
         title: entry.title,
@@ -769,9 +795,36 @@ export default function App() {
     [library, patchLibrary, user],
   );
 
+  const importSteamEntries = useCallback((entries) => {
+    if (!readyRef.current || loadedAccount.current !== accountId) throw new Error('Account changed. Reopen Steam import.');
+    const current = latest.current.libraries;
+    const next = appendSteamEntries(current.games ?? [], entries);
+    const count = next.length - (current.games ?? []).length;
+    setLibraries((prev) => ({ ...prev, games: appendSteamEntries(prev.games ?? [], entries) }));
+    setShowUnrated(true);
+    setUi((prev) => ({ ...prev, games: { ...prev.games, view: 'board', openId: null } }));
+    return count;
+  }, [accountId]);
+
+  const finishRating = useCallback((id) => {
+    patchLibrary((list) => withRanks(list.map((item) => {
+      if (item.id !== id || !item.unrated) return item;
+      const next = { ...item, unrated: false,
+        overallScore: computeOverall(item.categoryScores, config.categories, item.disabledCategories),
+        updatedAt: new Date().toISOString() };
+      if (next.provider && next.providerId) pendingReviewPushes.current.add(id);
+      return next;
+    })));
+    setShowUnrated(false);
+  }, [patchLibrary, config]);
+
   /* ---- derived view -------------------------------------------------- */
-  const shown = useMemo(() => visibleItems(items, state.filters), [items, state.filters]);
-  const reorderable = isReorderable(state.filters);
+  const rankedItems = useMemo(() => items.filter((item) => !item.unrated), [items]);
+  const unratedItems = useMemo(() => items.filter((item) => item.unrated), [items]);
+  const unratedBoard = library === 'games' && showUnrated && unratedItems.length > 0;
+  const boardItems = unratedBoard ? unratedItems : rankedItems;
+  const shown = useMemo(() => visibleItems(boardItems, state.filters), [boardItems, state.filters]);
+  const reorderable = !unratedBoard && isReorderable(state.filters);
   const filtered = isFiltered(state.filters);
 
   const openIndex = useMemo(
@@ -788,7 +841,7 @@ export default function App() {
   /* ---- export -------------------------------------------------------- */
   const handleExport = useCallback(
     async (format) => {
-      if (exporting) return;
+      if (exporting || unratedBoard) return;
       setExporting(true);
       try {
         const { blob, ext } = await renderRankingImage({
@@ -815,18 +868,22 @@ export default function App() {
         setExporting(false);
       }
     },
-    [config, exporting, shown, state.filters, theme],
+    [config, exporting, shown, state.filters, theme, unratedBoard],
   );
 
   /* ---- compare ------------------------------------------------------- */
   const startCompare = useCallback(
     (id) => {
+      if ((libraries[library] ?? []).find((item) => item.id === id)?.unrated) {
+        setToast({ kind: 'ok', message: 'Finish this game’s rating before comparing scores.' });
+        return;
+      }
       setUi((prev) => {
         const current = prev[library];
         const other =
           current.compare[1] && current.compare[1] !== id
             ? current.compare[1]
-            : (libraries[library] ?? []).find((item) => item.id !== id)?.id ?? null;
+            : (libraries[library] ?? []).find((item) => !item.unrated && item.id !== id)?.id ?? null;
         return { ...prev, [library]: { ...current, view: 'compare', compare: [id, other] } };
       });
     },
@@ -857,6 +914,7 @@ export default function App() {
   /* ---- global shortcuts ---------------------------------------------- */
   useEffect(() => {
     function onKeyDown(event) {
+      if (showSteam) return;
       const tag = event.target?.tagName;
       const typing =
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable;
@@ -901,7 +959,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleExport, openItem, setOpenId, setView]);
+  }, [handleExport, openItem, setOpenId, setView, showSteam]);
 
   /* ---- render -------------------------------------------------------- */
   if (!ready) {
@@ -981,6 +1039,10 @@ export default function App() {
           }}
         />
       ) : null}
+      {showSteam ? (
+        <SteamImport key={accountId ?? 'local'} items={libraries.games ?? []}
+          onImport={importSteamEntries} onClose={() => setShowSteam(false)} />
+      ) : null}
       {toast ? (
         <div className={`toast toast--${toast.kind}`} role="status">
           <span>{toast.message}</span>
@@ -1014,7 +1076,8 @@ export default function App() {
           <DetailView
             item={openItem}
             config={config}
-            position={openIndex + 1}
+            position={openItem.rank}
+            onFinishRating={() => finishRating(openItem.id)}
             saveState={saveState}
             importing={importing}
             onBack={() => setOpenId(null)}
@@ -1041,7 +1104,7 @@ export default function App() {
     );
   }
 
-  const counted = `${items.length} ${items.length === 1 ? config.item : config.items} ranked`;
+  const counted = `${rankedItems.length} ${rankedItems.length === 1 ? config.item : config.items} ranked${unratedItems.length ? ` · ${unratedItems.length} unrated` : ''}`;
   const subtitle =
     state.view === 'stats'
       ? 'How your rankings break down'
@@ -1068,18 +1131,27 @@ export default function App() {
           importing={importing}
           onAdd={addItem}
           onSearchAdd={() => setShowCatalog(true)}
+          onSteamImport={library === 'games' ? () => setShowSteam(true) : null}
         />
 
         {state.view === 'board' ? (
           <>
+            {library === 'games' && unratedItems.length > 0 ? (
+              <div className="steam-collection-switch" role="group" aria-label="Game collection">
+                <button className={`btn ${!unratedBoard ? 'btn--primary' : 'btn--ghost'}`} aria-pressed={!unratedBoard} onClick={() => setShowUnrated(false)}>Ranked ({rankedItems.length})</button>
+                <button className={`btn ${unratedBoard ? 'btn--primary' : 'btn--ghost'}`} aria-pressed={unratedBoard} onClick={() => setShowUnrated(true)}>Unrated ({unratedItems.length})</button>
+                {unratedBoard ? <span>Open a game and finish its rating to add it to your ranked board.</span> : null}
+              </div>
+            ) : null}
             <FilterBar
               config={config}
               filters={state.filters}
               onChange={setFilters}
-              total={items.length}
+              total={boardItems.length}
               shown={shown.length}
               onExport={handleExport}
               exporting={exporting}
+              exportDisabled={unratedBoard}
               searchRef={searchRef}
             />
             <BoardView
@@ -1101,12 +1173,12 @@ export default function App() {
         ) : null}
 
         {state.view === 'stats' ? (
-          <StatsView items={items} config={config} onOpen={setOpenId} />
+          <StatsView items={rankedItems} config={config} onOpen={setOpenId} />
         ) : null}
 
         {state.view === 'compare' ? (
           <CompareView
-            items={items}
+            items={rankedItems}
             config={config}
             selection={state.compare}
             onSelect={selectCompare}
@@ -1116,7 +1188,7 @@ export default function App() {
         ) : null}
 
         {state.view === 'awards' ? (
-          <AwardsView config={config} items={items} user={user} libraryKey={library} />
+          <AwardsView config={config} items={rankedItems} user={user} libraryKey={library} />
         ) : null}
       </main>
     </div>
