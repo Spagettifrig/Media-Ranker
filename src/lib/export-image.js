@@ -5,7 +5,7 @@
  * owns its own layout, so it is identical whatever the window size, whatever
  * is scrolled into view, and whichever theme is on screen.
  */
-import { scoreBand } from './score.js';
+import { GOLD_STOPS, isGoldScore, scoreBand } from './score.js';
 import { formatDate, formatHours } from './stats.js';
 import { genreLabels, modeLabels } from './media.js';
 
@@ -209,7 +209,13 @@ export async function renderRankingImage({ items, config, format = 'png', theme 
     }
 
     const band = scoreBand(item.overallScore);
-    ctx.fillStyle = band.color;
+    if (isGoldScore(item.overallScore)) {
+      const gold = ctx.createLinearGradient(scoreCx - 21, mid - 21, scoreCx + 21, mid + 21);
+      for (const [stop, colour] of GOLD_STOPS) gold.addColorStop(stop, colour);
+      ctx.fillStyle = gold;
+    } else {
+      ctx.fillStyle = band.color;
+    }
     ctx.beginPath();
     ctx.arc(scoreCx, mid, 21, 0, Math.PI * 2);
     ctx.fill();
