@@ -91,6 +91,21 @@ What is different from the desktop app:
 - Exporting downloads the image, or opens the share sheet on a phone.
 - There are no update checks: a new deploy loads on the next visit.
 
+### Hosting on Cloudflare Pages
+
+Connect the GitHub repo in Cloudflare (Workers & Pages → Create → Pages →
+Connect to Git) with these build settings:
+
+- Build command: `npm run build:web`
+- Build output directory: `dist-web`
+- Environment variable `NODE_VERSION` = `22`
+
+Every push to `main` then deploys the site, and every other branch gets its
+own preview link. `web/public/_headers` keeps phones from holding on to an
+old version. Once the site has its address, add it in Supabase under
+Authentication → URL Configuration (Site URL and Redirect URLs) so sign-up
+confirmation emails link back to the website.
+
 The website calls the `catalog` and `steam` Supabase functions from the
 browser, so both need deploying once more after this change to send CORS
 headers (`npx supabase@latest functions deploy catalog --project-ref
