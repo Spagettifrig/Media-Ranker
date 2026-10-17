@@ -1,4 +1,4 @@
-import { MAX_SCORE, MIN_SCORE, clampScore, scoreBand } from '../lib/score.js';
+import { MAX_SCORE, MIN_SCORE, clampScore, isGoldScore, scoreBand } from '../lib/score.js';
 
 /**
  * A 1-100 slider whose fill, thumb and value chip all take their colour from
@@ -36,6 +36,7 @@ export default function ScoreSlider({
     readOnly ? 'slider--readonly' : '',
     active ? 'is-active' : '',
     notApplicable ? 'is-na' : '',
+    !notApplicable && isGoldScore(score) ? 'slider--gold' : '',
   ]
     .filter(Boolean)
     .join(' ');
